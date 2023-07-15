@@ -1,0 +1,28 @@
+---
+Language: Cpp
+AlignEscapedNewlines: Left
+BreakBeforeInheritanceComma: true
+BreakConstructorInitializers: BeforeComma
+IndentPPDirectives: AfterHash
+BreakBeforeBraces: Custom
+BraceWrapping:
+    AfterFunction: true
+NamespaceIndentation: None
+QualifierAlignment: Right
+AllowShortIfStatementsOnASingleLine: false
+IndentCaseLabels: true
+IndentWidth: 2
+PointerAlignment: Left
+TabWidth: 2
+AlignConsecutiveMacros: true
+AlignConsecutiveAssignments: true
+AlignTrailingComments: true
+AlignConsecutiveDeclarations: true
+AlignOperands: true
+AllowShortBlocksOnASingleLine: true
+AllowShortFunctionsOnASingleLine: false
+ColumnLimit: 80
+KeepEmptyLinesAtTheStartOfBlocks: false
+SortIncludes: false
+SpaceAfterCStyleCast: false
+AllowAllParametersOfDeclarationOnNextLine: false
