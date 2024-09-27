@@ -4,9 +4,9 @@ project(handmade_hero VERSION 0.1 LANGUAGES C)
 
 add_executable("${PROJECT_NAME}" src/main.c)
 
-#if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-#  set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE $<CONFIG:Debug>)
-#endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+  set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE $<CONFIG:Debug>)
+endif()
 
 message("Project source dir is ${PROJECT_SOURCE_DIR}")
 
