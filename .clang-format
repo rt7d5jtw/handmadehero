@@ -14,10 +14,13 @@ IndentCaseLabels: true
 IndentWidth: 2
 PointerAlignment: Left
 TabWidth: 2
+BinPackArguments: false
+BinPackParameters: false
+AlignAfterOpenBracket: BlockIndent
 AlignConsecutiveMacros: true
 AlignConsecutiveAssignments: true
 AlignTrailingComments: true
-AlignConsecutiveDeclarations: true
+AlignConsecutiveDeclarations: false
 AlignOperands: true
 AllowShortBlocksOnASingleLine: true
 AllowShortFunctionsOnASingleLine: false
