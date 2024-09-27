@@ -1,143 +1,257 @@
 #if defined(_WIN32)
 
-#ifndef UNICODE
-#define UNICODE
-#endif
+#  ifndef UNICODE
+#    define UNICODE
+#  endif
 
-#include <windows.h>
+#  include <windows.h>
 #endif
 
 #if defined(_WIN32)
 
+#include <stdint.h>
+#define u8 uint8_t
+#define u16 uint16_t
+#define u32 uint32_t
+#define u64 uint64_t
+
+#define s8 int8_t
+#define s16 int16_t
+#define s32 int32_t
+#define s64 int64_t
+
+#  define internal static
+#  define local    static
+#  define global   static
+
+#  include <stdbool.h>
+global bool running;
+global BITMAPINFO bitmapInfo;
+global void* bitmapMemory;
+global HBITMAP bitmapHandle;
+global HDC bitmapDeviceContext;
+
+// GDI is Windows Graphics API
+
+internal void win32ResizeDIBSection(u32 width, u32 height)
+{
+  if (bitmapHandle) {
+    // DeleteObject
+    // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-deleteobject
+    DeleteObject(bitmapHandle);
+  }
+  if (!bitmapDeviceContext) {
+    // CreateCompatibleDC
+    // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createcompatibledc
+    bitmapDeviceContext = CreateCompatibleDC(0);
+  }
+
+  // BITMAPINFO
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfo
+  bitmapInfo.bmiHeader.biSize          = sizeof(bitmapInfo.bmiHeader);
+  bitmapInfo.bmiHeader.biWidth         = width;
+  bitmapInfo.bmiHeader.biHeight        = height;
+  bitmapInfo.bmiHeader.biPlanes        = 1;
+  bitmapInfo.bmiHeader.biBitCount      = 32;
+  bitmapInfo.bmiHeader.biCompression   = BI_RGB;
+  bitmapInfo.bmiHeader.biSizeImage     = 0;
+  bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
+  bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
+  bitmapInfo.bmiHeader.biClrUsed       = 0;
+  bitmapInfo.bmiHeader.biClrImportant  = 0;
+
+  // CreateDIBSection
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
+  bitmapHandle = CreateDIBSection(
+      bitmapDeviceContext, &bitmapInfo, DIB_RGB_COLORS, &bitmapMemory, 0, 0
+  );
+}
+
+internal void
+win32UpdateWindow(HDC deviceContext, u32 x, u32 y, u32 width, u32 height)
+{
+  // StretchDIBits
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-stretchdibits
+  StretchDIBits(
+      deviceContext,
+      x,
+      y,
+      width,
+      height,
+      x,
+      y,
+      width,
+      height,
+      &bitmapMemory,
+      &bitmapInfo,
+      DIB_RGB_COLORS,
+      SRCCOPY
+  );
+}
+
 // https://learn.microsoft.com/en-us/windows/win32/learnwin32/creating-a-window
 const wchar_t CLASS_NAME[] = L"Sample Window Class";
 
-LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK
+win32WndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   LRESULT result = 0;
 
-    switch(msg)
-    {
-        case WM_SIZE: {
-          // https://learn.microsoft.com/en-us/windows/win32/api/debugapi/nf-debugapi-outputdebugstringa
-          OutputDebugStringA("WM_SIZE\n");
-        } break;
-        case WM_DESTROY: {
-          OutputDebugStringA("WM_DESTROY!\n");
-          PostQuitMessage(0);
-        } break;
-        case WM_CLOSE: {
-            DestroyWindow(hwnd);
-        } break;
-        case WM_ACTIVATEAPP: {
-          OutputDebugStringA("WM_ACTIVEAPP\n");
-        } break;
-        case WM_PAINT: {
-          // PAINTSTRUCT  https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-paintstruct
-          // BeginPaint   https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
-          // EndPaint     https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-endpaint
-          PAINTSTRUCT paint;
+  switch (msg) {
+    case WM_SIZE: {
+      RECT clientRect;
+      // GetClientRect
+      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getclientrect
+      GetClientRect(window, &clientRect);
 
-          HDC deviceContext = BeginPaint(hwnd, &paint);
+      u32 width  = clientRect.right - clientRect.left;
+      u32 height = clientRect.bottom - clientRect.top;
 
-          DWORD rasterOp = BLACKNESS;
+      win32ResizeDIBSection(width, height);
 
-          int x             = paint.rcPaint.left;
-          int y             = paint.rcPaint.top;
-          int height        = paint.rcPaint.bottom - paint.rcPaint.top;
-          int width         = paint.rcPaint.right - paint.rcPaint.left;
+      // OutputDebugStringA
+      // https://learn.microsoft.com/en-us/windows/win32/api/debugapi/nf-debugapi-outputdebugstringa
+      OutputDebugStringA("WM_SIZE\n");
+    } break;
+    case WM_DESTROY: {
+      // running = false;
+      OutputDebugStringA("WM_DESTROY!\n");
+      // PostQuitMessage(int nExitCode)
+      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postquitmessage
+      PostQuitMessage(0);
+    } break;
+    case WM_CLOSE: {
+      // running = false;
+      DestroyWindow(window);
+    } break;
+    case WM_ACTIVATEAPP: {
+      OutputDebugStringA("WM_ACTIVEAPP\n");
+    } break;
+    case WM_PAINT: {
+      // PAINTSTRUCT
+      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-paintstruct
+      // BeginPaint
+      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
+      // EndPaint
+      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-endpaint
+      PAINTSTRUCT paint;
 
-          // PatBlt       https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-patblt
-          PatBlt(
-            // A handle to the device context.
-            deviceContext,
-            // Size and position args
-            x,
-            y,
-            width,
-            height,
-            // The raster operation code
-            rasterOp
-          );
-          EndPaint(hwnd, &paint);
-        }
-        default: {
-          result = DefWindowProc(hwnd, msg, wParam, lParam);
-        }
+      HDC deviceContext = BeginPaint(window, &paint);
+
+      DWORD rasterOp = BLACKNESS;
+
+      u32 x      = paint.rcPaint.left;
+      u32 y      = paint.rcPaint.top;
+      u32 height = paint.rcPaint.bottom - paint.rcPaint.top;
+      u32 width  = paint.rcPaint.right - paint.rcPaint.left;
+
+      // PatBlt
+      // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-patblt
+      PatBlt(
+          // A handle to the device context.
+          deviceContext,
+          // Size and position args
+          x,
+          y,
+          width,
+          height,
+          // The raster operation code
+          rasterOp
+      );
+      EndPaint(window, &paint);
     }
+    default: {
+      result = DefWindowProc(window, msg, wParam, lParam);
+    }
+  }
 
-    return result;
+  return result;
 }
 
 // https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-winmain
 // https://learn.microsoft.com/en-us/windows/win32/learnwin32/winmain--the-application-entry-point
 int WINAPI WinMain(
-  HINSTANCE hInstance,
-  HINSTANCE hPrevInstance,
-  PWSTR pCmdLine,
-  int nCmdShow
-) {
+    HINSTANCE hInstance,
+    HINSTANCE hPrevInstance,
+    PWSTR pCmdLine,
+    int nCmdShow
+)
+{
   MessageBox(NULL, TEXT("Hello, Windows 98!"), TEXT("HelloMsg"), 0);
 
-  //wc.lpfnWndProc		= WindowProc;
-  //wc.hInstance			= hInstance;
-  //wc.lpszClassName	= CLASS_NAME;
+  // GetStdHandle https://learn.microsoft.com/en-us/windows/console/getstdhandle?redirectedfrom=MSDN
+  HANDLE stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+  if (stdout && stdout != INVALID_HANDLE_VALUE) {
+    DWORD written = 0;
+    const char* message = "foo bar";
+    // WriteConsole https://learn.microsoft.com/en-us/windows/console/writeconsole
+    WriteConsole(stdout, message, strlen(message), &written, NULL);
+  }
 
-  //RegisterClass(&wc);
+  // wc.lpfnWndProc		= WindowProc;
+  // wc.hInstance			= hInstance;
+  // wc.lpszClassName	= CLASS_NAME;
 
-  // WNDCLASS     https://learn.microsoft.com/en-us/previous-versions/ms942860(v=msdn.10)
-  // WNDCLASSA    https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassa
-  // WNDCLASSEXA  https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexa
-  //WNDCLASSEXA wc = {};
+  // RegisterClass(&wc);
+
+  // WNDCLASS
+  // https://learn.microsoft.com/en-us/previous-versions/ms942860(v=msdn.10)
+  // WNDCLASSA
+  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassa
+  // WNDCLASSEXA
+  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexa
+  // WNDCLASSEXA wc = {};
   WNDCLASSEX wc;
   HWND hwnd;
   MSG msg;
 
   wc.cbSize        = sizeof(WNDCLASSEX);
   wc.style         = 0;
-  wc.lpfnWndProc   = WndProc;
+  wc.lpfnWndProc   = win32WndProc;
   wc.cbClsExtra    = 0;
   wc.cbWndExtra    = 0;
   wc.hInstance     = hInstance;
   wc.hIcon         = LoadIcon(NULL, IDI_APPLICATION);
   wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
-  wc.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
+  wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
   wc.lpszMenuName  = NULL;
-  //wc.lpszClassName = g_szClassName;
+  // wc.lpszClassName = g_szClassName;
   wc.lpszClassName = CLASS_NAME;
   wc.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
 
-  if(!RegisterClassEx(&wc))
-    {
-      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebox
-      MessageBox(
+  if (!RegisterClassEx(&wc)) {
+    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebox
+    MessageBox(
         NULL,
         L"Window Registration Failed!",
         L"Error!",
         MB_ICONEXCLAMATION | MB_OK
-        );
-      return 0;
-    }
+    );
+    return 0;
+  }
 
   // LPCTSTR
   // https://softwareengineering.stackexchange.com/questions/194764/what-is-lpctstr
-  //LPCSTR title = "miukumauku";
-  //DWORD dwStyle = WS_OVERLAPPEDWINDOW;
-  //int x = 100;
-  //int y = 100;
-  //int width = 650;
-  //int height = 450;
+  // LPCSTR title = "miukumauku";
+  // DWORD dwStyle = WS_OVERLAPPEDWINDOW;
+  // int x = 100;
+  // int y = 100;
+  // int width = 650;
+  // int height = 450;
   //// handle of the parent window
-  //HWND hWndParent = NULL;
+  // HWND hWndParent = NULL;
   //// A handle to a menu
-  //HMENU hMenu = NULL;
+  // HMENU hMenu = NULL;
   //// Additiona application data
-  //LPVOID lpParam = NULL;
+  // LPVOID lpParam = NULL;
 
-  // CreateWindowExA  https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowexa
-  // CreateWindowEx   https://learn.microsoft.com/en-us/previous-versions/ms960010(v=msdn.10)
-  // CreateWindowA    https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowa
-  //hwnd = CreateWindowExA(
+  // CreateWindowExA
+  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowexa
+  // CreateWindowEx
+  // https://learn.microsoft.com/en-us/previous-versions/ms960010(v=msdn.10)
+  // CreateWindowA
+  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowa
+  // hwnd = CreateWindowExA(
   //  // dwExStyle
   //  0,
   //  // lpClassName
@@ -157,32 +271,29 @@ int WINAPI WinMain(
   //);
 
   hwnd = CreateWindowEx(
-    0,//WS_EX_CLIENTEDGE,
-    CLASS_NAME,//g_szClassName,
-    L"The title of my window",
-    WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-    CW_USEDEFAULT,
-    CW_USEDEFAULT,
-    CW_USEDEFAULT,
-    CW_USEDEFAULT,
-    NULL,
-    NULL,
-    hInstance,
-    NULL
-   );
+      0,          // WS_EX_CLIENTEDGE,
+      CLASS_NAME, // g_szClassName,
+      L"The title of my window",
+      WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+      CW_USEDEFAULT,
+      CW_USEDEFAULT,
+      CW_USEDEFAULT,
+      CW_USEDEFAULT,
+      NULL,
+      NULL,
+      hInstance,
+      NULL
+  );
 
-  if (hwnd == NULL)
-  {
-      MessageBox(
-        NULL,
-        L"Window Creation Failed!",
-        L"Error!",
-        MB_ICONEXCLAMATION | MB_OK
-        );
-      return 0;
+  if (hwnd == NULL) {
+    MessageBox(
+        NULL, L"Window Creation Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK
+    );
+    return 0;
   }
 
-  // ShowWindow https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
+  // ShowWindow
+  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
   ShowWindow(hwnd, nCmdShow);
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatewindow
   UpdateWindow(hwnd);
@@ -190,10 +301,9 @@ int WINAPI WinMain(
   // Run the message loop
   // https://learn.microsoft.com/en-us/windows/win32/winmsg/using-messages-and-message-queues
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmessage
-  while(GetMessage(&msg, NULL, 0, 0) > 0)
-  {
-      TranslateMessage(&msg);
-      DispatchMessage(&msg);
+  while (GetMessage(&msg, NULL, 0, 0) > 0) {
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
   }
 
   return msg.wParam;
@@ -201,11 +311,42 @@ int WINAPI WinMain(
 #endif
 
 #if defined(__linux__)
-#include <unistd.h>
-#include <sys/syscall.h>
+#  include <unistd.h>
+#  include <sys/syscall.h>
+#include <X11/Xlib.h>
 
-int main(void) {
+int main(void)
+{
   syscall(SYS_write, 1, "I like pancakes\n", 17);
+
+  u32 x, y = 0, 0;
+  u32 width, height = 800, 600;
+  u32 border_width, border = 0, 0
+
+  // XOpenDisplay https://linux.die.net/man/3/xopendisplay
+  Display* mainDisplay = XOpenDisplay(0);
+  // XDefaultRootWindow https://tronche.com/gui/x/xlib/display/display-macros.html#DefaultRootWindow
+  Window rootWindow = XDefaultRootWindow(mainDisplay);
+  // XCreateSimpleWindow https://tronche.com/gui/x/xlib/window/XCreateWindow.html
+  Window mainWindow = XCreateSimpleWindow(
+    mainDisplay,
+    rootWindow,
+    x,
+    y,
+    width,
+    height,
+    border_width,
+    border,
+    0x00aade87
+  )
+
+  // XMapWindow https://tronche.com/gui/x/xlib/window/XMapWindow.html
+  XMapWindow(mainDisplay, mainWindow);
+  // XFlush https://tronche.com/gui/x/xlib/event-handling/XFlush.html
+  XFlush(mainDisplay);
+
+  for (;;) { sleep(1); }
+
   return 0;
 }
 #endif
