@@ -1,14 +1,3 @@
-#if defined(_WIN32)
-
-#  ifndef UNICODE
-#    define UNICODE
-#  endif
-
-#  include <windows.h>
-#endif
-
-#if defined(_WIN32)
-
 #include <stdint.h>
 #define u8 uint8_t
 #define u16 uint16_t
@@ -20,9 +9,20 @@
 #define s32 int32_t
 #define s64 int64_t
 
-#  define internal static
-#  define local    static
-#  define global   static
+#define internal static
+#define local    static
+#define global   static
+
+#if defined(_WIN32)
+
+#  ifndef UNICODE
+#    define UNICODE
+#  endif
+
+#  include <windows.h>
+#endif
+
+#if defined(_WIN32)
 
 #  include <stdbool.h>
 global bool running;
@@ -319,33 +319,50 @@ int main(void)
 {
   syscall(SYS_write, 1, "I like pancakes\n", 17);
 
-  u32 x, y = 0, 0;
-  u32 width, height = 800, 600;
-  u32 border_width, border = 0, 0
+  u32 x = 0;
+  u32 y = 0;
+  u32 width = 800;
+  u32 height = 600;
+  u32 borderWidth = 0;
+  u32 windowDepth = CopyFromParent;
+  u32 windowClass = CopyFromParent;
+  Visual* windowVisual = CopyFromParent;
+
+  u32 attributeValueMask = CWBackPixel;
+  XSetWindowAttributes windowAttributes = {0};
+  u64 DARK_GREEN = 0x8aa37f;
+  windowAttributes.background_pixel = DARK_GREEN;
 
   // XOpenDisplay https://linux.die.net/man/3/xopendisplay
   Display* mainDisplay = XOpenDisplay(0);
   // XDefaultRootWindow https://tronche.com/gui/x/xlib/display/display-macros.html#DefaultRootWindow
   Window rootWindow = XDefaultRootWindow(mainDisplay);
   // XCreateSimpleWindow https://tronche.com/gui/x/xlib/window/XCreateWindow.html
-  Window mainWindow = XCreateSimpleWindow(
+  // XCreateWindow       https://tronche.com/gui/x/xlib/window/XCreateWindow.html
+  Window mainWindow = XCreateWindow(
     mainDisplay,
     rootWindow,
     x,
     y,
     width,
     height,
-    border_width,
-    border,
-    0x00aade87
-  )
+    borderWidth,
+    windowDepth,
+    windowClass,
+    windowVisual,
+    attributeValueMask,
+    &windowAttributes
+  );
 
   // XMapWindow https://tronche.com/gui/x/xlib/window/XMapWindow.html
   XMapWindow(mainDisplay, mainWindow);
   // XFlush https://tronche.com/gui/x/xlib/event-handling/XFlush.html
-  XFlush(mainDisplay);
+  //XFlush(mainDisplay);
 
-  for (;;) { sleep(1); }
+  for (;;) {
+    XEvent generalEvent = {0};
+    XNextEvent(mainDisplay, &generalEvent);
+  }
 
   return 0;
 }
