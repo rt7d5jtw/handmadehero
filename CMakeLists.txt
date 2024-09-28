@@ -8,7 +8,25 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
   set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE $<CONFIG:Debug>)
 endif()
 
+# NOTE: target name is different from project name
+#       target name is one created with add_executable, add_library or add_custom_target
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Link with X11
+  find_package(X11 REQUIRED)
+  link_libraries(${X11_LIBRARIES})
+  include_directories(${X11_INCLUDE_DIR})
+  # https://cmake.org/cmake/help/latest/command/target_link_libraries.html
+  target_link_libraries(
+    "${PROJECT_NAME}"
+    PRIVATE
+    ${X11_LIBRARIES}
+    -lX11
+  )
+endif()
+
 message("Project source dir is ${PROJECT_SOURCE_DIR}")
+message("CMAKE_SYSTEM_NAME is ${CMAKE_SYSTEM_NAME}")
 
 file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.c)
 target_sources(${PROJECT_NAME} PRIVATE ${sources})
