@@ -1,10 +1,10 @@
 #include <stdint.h>
-#define u8 uint8_t
+#define u8  uint8_t
 #define u16 uint16_t
 #define u32 uint32_t
 #define u64 uint64_t
 
-#define s8 int8_t
+#define s8  int8_t
 #define s16 int16_t
 #define s32 int32_t
 #define s64 int64_t
@@ -90,7 +90,7 @@ win32UpdateWindow(HDC deviceContext, u32 x, u32 y, u32 width, u32 height)
 }
 
 // https://learn.microsoft.com/en-us/windows/win32/learnwin32/creating-a-window
-const wchar_t CLASS_NAME[] = L"Sample Window Class";
+wchar_t const CLASS_NAME[] = L"Sample Window Class";
 
 LRESULT CALLBACK
 win32WndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -179,12 +179,14 @@ int WINAPI WinMain(
 {
   MessageBox(NULL, TEXT("Hello, Windows 98!"), TEXT("HelloMsg"), 0);
 
-  // GetStdHandle https://learn.microsoft.com/en-us/windows/console/getstdhandle?redirectedfrom=MSDN
+  // GetStdHandle
+  // https://learn.microsoft.com/en-us/windows/console/getstdhandle?redirectedfrom=MSDN
   HANDLE stdout = GetStdHandle(STD_OUTPUT_HANDLE);
   if (stdout && stdout != INVALID_HANDLE_VALUE) {
-    DWORD written = 0;
-    const char* message = "foo bar";
-    // WriteConsole https://learn.microsoft.com/en-us/windows/console/writeconsole
+    DWORD written       = 0;
+    char const* message = "foo bar";
+    // WriteConsole
+    // https://learn.microsoft.com/en-us/windows/console/writeconsole
     WriteConsole(stdout, message, strlen(message), &written, NULL);
   }
 
@@ -311,58 +313,216 @@ int WINAPI WinMain(
 #endif
 
 #if defined(__linux__)
+#  include <stdio.h>
 #  include <unistd.h>
 #  include <sys/syscall.h>
-#include <X11/Xlib.h>
+#  include <stdbool.h>
+#  include <string.h>
+#  include <stdlib.h>
+#  include <X11/Xlib.h>
+#  include <X11/keysym.h>
+#  include <X11/Xutil.h>
+
+bool keyboard[256] = {0};
+global bool running = true;
+
+#define DARK_GREEN  0x8aa37f
+#define BLUE        0x0000ff
+#define PINK        0xffa6c9
+#define RED         0xcd1c18
+#define WHITE       0xffffff
+
+void drawToBuffer(u64 yColor, u64 xColor, XImage* image, GC gc, Window mainWindow, Display* mainDisplay) {
+  for (int y = 0; y < 600; y += 1) {
+    for (int x = 0; x < 800; x += 1) {
+      // Checker pattern
+      unsigned long pixel = ((x ^ y) & 1) ? yColor : xColor;
+      XPutPixel(image, x, y, pixel);
+    }
+  }
+
+  XPutImage(mainDisplay, mainWindow, gc, image, 0, 0, 0, 0, 800, 600);
+}
+
+
+GC create_x11_graphics_context(Display* display, Window window, int reverse_video) {
+  GC gc;
+  unsigned long valuemask = 0;
+
+  XGCValues values;
+  unsigned int line_width = 2;
+  int line_style = LineSolid;
+  int cap_style = CapButt;
+  int join_style = JoinBevel;
+  int screen_num = DefaultScreen(display);
+
+  gc = XCreateGC(display, window, valuemask, &values);
+
+  if (gc < 0) {
+    fprintf(stderr, "XCreatedGC: \n");
+  }
+
+  if (reverse_video) {
+    XSetForeground(display, gc, WhitePixel(display, screen_num));
+    XSetBackground(display, gc, WhitePixel(display, screen_num));
+  } else {
+    XSetForeground(display, gc, BlackPixel(display, screen_num));
+    XSetBackground(display, gc, WhitePixel(display, screen_num));
+  }
+
+  // Define the style of lines that will be drawn for this GC
+  XSetLineAttributes(display, gc, line_width, line_style, cap_style, join_style);
+
+  // Define the fill style for the GC
+  XSetFillStyle(display, gc, FillSolid);
+
+  return gc;
+}
 
 int main(void)
 {
   syscall(SYS_write, 1, "I like pancakes\n", 17);
 
-  u32 x = 0;
-  u32 y = 0;
-  u32 width = 800;
-  u32 height = 600;
-  u32 borderWidth = 0;
-  u32 windowDepth = CopyFromParent;
-  u32 windowClass = CopyFromParent;
+  u32 x                = 0;
+  u32 y                = 0;
+  u32 width            = 800;
+  u32 height           = 600;
+  u32 borderWidth      = 0;
+  u32 windowDepth      = CopyFromParent;
+  u32 windowClass      = CopyFromParent;
   Visual* windowVisual = CopyFromParent;
 
-  u32 attributeValueMask = CWBackPixel;
+  u32 attributeValueMask                = CWBackPixel;
   XSetWindowAttributes windowAttributes = {0};
-  u64 DARK_GREEN = 0x8aa37f;
-  windowAttributes.background_pixel = DARK_GREEN;
+  windowAttributes.background_pixel     = DARK_GREEN;
 
   // XOpenDisplay https://linux.die.net/man/3/xopendisplay
+  // Open connection with the X server
   Display* mainDisplay = XOpenDisplay(0);
-  // XDefaultRootWindow https://tronche.com/gui/x/xlib/display/display-macros.html#DefaultRootWindow
+  // XDefaultRootWindow
+  // https://tronche.com/gui/x/xlib/display/display-macros.html#DefaultRootWindow
   Window rootWindow = XDefaultRootWindow(mainDisplay);
-  // XCreateSimpleWindow https://tronche.com/gui/x/xlib/window/XCreateWindow.html
-  // XCreateWindow       https://tronche.com/gui/x/xlib/window/XCreateWindow.html
+  // XCreateSimpleWindow
+  // https://tronche.com/gui/x/xlib/window/XCreateWindow.html XCreateWindow
+  // https://tronche.com/gui/x/xlib/window/XCreateWindow.html
   Window mainWindow = XCreateWindow(
-    mainDisplay,
-    rootWindow,
-    x,
-    y,
-    width,
-    height,
-    borderWidth,
-    windowDepth,
-    windowClass,
-    windowVisual,
-    attributeValueMask,
-    &windowAttributes
+      mainDisplay,
+      rootWindow,
+      x,
+      y,
+      width,
+      height,
+      borderWidth,
+      windowDepth,
+      windowClass,
+      windowVisual,
+      attributeValueMask,
+      &windowAttributes
   );
+  XEvent generalEvent;
 
   // XMapWindow https://tronche.com/gui/x/xlib/window/XMapWindow.html
   XMapWindow(mainDisplay, mainWindow);
   // XFlush https://tronche.com/gui/x/xlib/event-handling/XFlush.html
+  // XFlush(mainDisplay);
+
+  // https://tronche.com/gui/x/xlib/GC/XCreateGC.html
+  // Create a simple graphics context
+  GC gc = XCreateGC(mainDisplay, mainWindow, 0, NULL);
+
+  //XSetForeground(mainDisplay, gc, BlackPixel(mainDisplay, screen));
+  int screen = DefaultScreen(mainDisplay);
+
+  XImage * image = XCreateImage(
+    mainDisplay,
+    DefaultVisual(mainDisplay, screen), DefaultDepth(mainDisplay, screen),
+    ZPixmap,
+    0,
+    NULL,
+    800,
+    600,
+    32,
+    0
+  );
+
+  // https://tronche.com/gui/x/xlib/event-handling/XSelectInput.html
+  // https://tronche.com/gui/x/xlib/events/mask.html
+  XSelectInput(mainDisplay, mainWindow, KeyPressMask | KeyReleaseMask | ExposureMask);
+
+  // https://tronche.com/gui/x/xlib/event-handling/XPending.html
+  //while (XPending(mainDisplay) > 0) {}
+
+  // https://gitlab.com/UltimaN3rd/croaking-kero-programming-tutorials/blob/master/opening_a_window_on_linux_with_xlib/opening_a_window_with_xlib.c
+
+  //GC gc = create_x11_graphics_context(mainDisplay, mainWindow, 0);
+  // https://tronche.com/gui/x/xlib/event-handling/XSync.html
+  // Flush the output buffer and wait until all request have been received and processed by the X server
+  //XSync(mainDisplay, False);
   //XFlush(mainDisplay);
 
-  for (;;) {
-    XEvent generalEvent = {0};
+  ////XDrawArc(mainDisplay, mainWindow, gc, 50-(30/2), 100-(30/2), 30, 30, 0, 360*64);
+  //XDrawLine(mainDisplay, mainWindow, gc, 10, 60, 180, 20);
+  //XFlush(mainDisplay);
+  //char* mytext = "This is some text";
+
+  image->data = malloc(image->bytes_per_line * image->height);
+
+  while (running) {
     XNextEvent(mainDisplay, &generalEvent);
+
+    if (generalEvent.type == KeyPress) printf("KeyPress: %x\n", generalEvent.xkey.keycode);
+    else printf("X11 Event: %d\n", generalEvent.type);
+
+    switch (generalEvent.type) {
+      // https://tronche.com/gui/x/xlib/events/exposure/expose.html
+      case Expose: {
+        printf("X11 Expose Event: %d\n", generalEvent.xexpose.type);
+
+        drawToBuffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
+
+        //if (generalEvent.xexpose.count) break;
+        ////XSetForeground(mainDisplay, gc, WhitePixel(mainDisplay, screen_num));
+        ////XDrawString(mainDisplay, mainWindow, gc, 10, 10, mytext, strlen(mytext));
+        //XFillRectangle(mainDisplay, mainWindow, gc, 0, 100, 50, 50);
+        break;
+      }
+      case KeyPress: {
+        int symbol           = XLookupKeysym(&generalEvent.xkey, 0);
+        keyboard[(u8)symbol] = true;
+
+        printf("KeyPress: %x\n", generalEvent.xkey.keycode);
+
+        switch (symbol) {
+          case XK_Escape: {
+            printf("Escape pressed\n");
+          } break;
+          case XK_a: {
+            //printf("\"a\" pressed\n");
+            XFlush(mainDisplay);
+            XSync(mainDisplay, 1);
+            drawToBuffer(BLUE, BLUE, image, gc, mainWindow, mainDisplay);
+            break;
+          }
+          case XK_b: {
+            drawToBuffer(RED, RED, image, gc, mainWindow, mainDisplay);
+            break;
+          }
+          case XK_q: {
+            printf("Closing application\n");
+            running = false;
+          } break;
+        }
+
+      } break;
+    }
   }
+
+  // Cleanup
+  XDestroyImage(image);
+  XFreeGC(mainDisplay, gc);
+  XDestroyWindow(mainDisplay, mainWindow);
+  // https://tronche.com/gui/x/xlib/display/XCloseDisplay.html
+  XCloseDisplay(mainDisplay);
 
   return 0;
 }

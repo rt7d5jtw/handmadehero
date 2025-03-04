@@ -1,4 +1,4 @@
-﻿## How to run?
+## How to run?
 
 Path to vscars:
 `C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build`
@@ -21,3 +21,4 @@ Windows:
 Linux:
   1. `$ cmake . -B build -G "Unix Makefiles"`
   2. `$ make -C build VERBOSE=1`
+  3. `$ ./build/handmade_hero`
