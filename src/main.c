@@ -341,6 +341,7 @@ void drawToBuffer(u64 yColor, u64 xColor, XImage* image, GC gc, Window mainWindo
     }
   }
 
+  //https://tronche.com/gui/x/xlib/graphics/XPutImage.html
   XPutImage(mainDisplay, mainWindow, gc, image, 0, 0, 0, 0, 800, 600);
 }
 
@@ -358,9 +359,9 @@ GC create_x11_graphics_context(Display* display, Window window, int reverse_vide
 
   gc = XCreateGC(display, window, valuemask, &values);
 
-  if (gc < 0) {
-    fprintf(stderr, "XCreatedGC: \n");
-  }
+  //if (gc < 0) {
+  //  fprintf(stderr, "XCreatedGC: \n");
+  //}
 
   if (reverse_video) {
     XSetForeground(display, gc, WhitePixel(display, screen_num));
@@ -447,7 +448,7 @@ int main(void)
 
   // https://tronche.com/gui/x/xlib/event-handling/XSelectInput.html
   // https://tronche.com/gui/x/xlib/events/mask.html
-  XSelectInput(mainDisplay, mainWindow, KeyPressMask | KeyReleaseMask | ExposureMask);
+  XSelectInput(mainDisplay, mainWindow, KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask | ButtonReleaseMask | Button1MotionMask);
 
   // https://tronche.com/gui/x/xlib/event-handling/XPending.html
   //while (XPending(mainDisplay) > 0) {}
@@ -486,6 +487,38 @@ int main(void)
         //XFillRectangle(mainDisplay, mainWindow, gc, 0, 100, 50, 50);
         break;
       }
+      case MotionNotify: {
+        int symbol           = XLookupKeysym(&generalEvent.xkey, 0);
+        // Mouse position
+        int x = generalEvent.xkey.x;
+        int y = generalEvent.xkey.y;
+
+        printf("[DEBUG] MotionNotify symbol: %d, coordinates: [%d, %d]\n", symbol, x, y);
+
+        XDrawPoint(mainDisplay, mainWindow, gc, x, y);
+        break;
+      }
+      case ButtonPress: {
+        int symbol           = XLookupKeysym(&generalEvent.xkey, 0);
+        // Mouse position
+        int x = generalEvent.xkey.x;
+        int y = generalEvent.xkey.y;
+
+        printf("[DEBUG] ButtonPress symbol: %d, coordinates: [%d, %d]\n", symbol, generalEvent.xkey.x, generalEvent.xkey.y);
+
+        XDrawPoint(mainDisplay, mainWindow, gc, x, y);
+        break;
+      }
+      case ButtonRelease: {
+        int symbol           = XLookupKeysym(&generalEvent.xkey, 0);
+
+        // Mouse position
+        int x = generalEvent.xkey.x;
+        int y = generalEvent.xkey.y;
+
+        printf("[DEBUG] Mouse button released, symbol: %d, [%d, %d]\n", symbol, x, y);
+        break;
+      }
       case KeyPress: {
         int symbol           = XLookupKeysym(&generalEvent.xkey, 0);
         keyboard[(u8)symbol] = true;
@@ -496,6 +529,16 @@ int main(void)
           case XK_Escape: {
             printf("Escape pressed\n");
           } break;
+          //case XK_Pointer_Button1: {
+          //  printf("Pointer Button 1 pressed\n");
+          //  break;
+          //}
+          case XK_r: {
+            XFlush(mainDisplay);
+            XSync(mainDisplay, 1);
+            drawToBuffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
+            break;
+          }
           case XK_a: {
             //printf("\"a\" pressed\n");
             XFlush(mainDisplay);
