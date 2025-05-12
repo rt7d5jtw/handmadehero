@@ -17,5 +17,5 @@ echo "Current directory %cd%"
 
 mkdir out
 pushd out
-cl -Zi ..\src\main.c user32.lib gdi32.lib
+cl -FC -Zi ..\src\main.c user32.lib gdi32.lib
 popd
