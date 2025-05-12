@@ -25,64 +25,119 @@
 #if defined(_WIN32)
 
 #  include <stdbool.h>
+
+#if RAND_MAX == 32767
+#  define Rand32() ((rand() << 16) + (rand() << 1) + (rand() & 1))
+#else
+#  define Rand32() rand()
+#endif
+
+/*
+  Device-Independent Bitmaps (DIB) https://learn.microsoft.com/en-us/windows/win32/gdi/device-independent-bitmaps
+*/
+
 global bool running;
+
+struct {
+  u32 width;
+  u32 height;
+  u32 *pixels;
+} frame = {0};
+
+// Tells GDI the dimensions and color info for DBI, https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfo
 global BITMAPINFO bitmapInfo;
 global void* bitmapMemory;
-global HBITMAP bitmapHandle;
-global HDC bitmapDeviceContext;
+
+// Handle to a GDI bitmap, encapsulates the info and array data
+global HBITMAP frameBitmap;
+// Device context handle to point to the bitmap handle
+global HDC frameDeviceContext = 0;
+
+global u32 bitmapWidth;
+global u32 bitmapHeight;
 
 // GDI is Windows Graphics API
 
 internal void win32ResizeDIBSection(u32 width, u32 height)
 {
-  if (bitmapHandle) {
-    // DeleteObject
-    // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-deleteobject
-    DeleteObject(bitmapHandle);
+  if (bitmapMemory) {
+   // VirtualFree https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfree
+   VirtualFree(bitmapMemory, 0, MEM_RELEASE);
   }
-  if (!bitmapDeviceContext) {
-    // CreateCompatibleDC
-    // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createcompatibledc
-    bitmapDeviceContext = CreateCompatibleDC(0);
-  }
+
+  bitmapWidth = width;
+  bitmapHeight = height;
 
   // BITMAPINFO
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfo
   bitmapInfo.bmiHeader.biSize          = sizeof(bitmapInfo.bmiHeader);
-  bitmapInfo.bmiHeader.biWidth         = width;
-  bitmapInfo.bmiHeader.biHeight        = height;
+  bitmapInfo.bmiHeader.biWidth         = bitmapWidth;
+  bitmapInfo.bmiHeader.biHeight        = -bitmapHeight;
   bitmapInfo.bmiHeader.biPlanes        = 1;
   bitmapInfo.bmiHeader.biBitCount      = 32;
   bitmapInfo.bmiHeader.biCompression   = BI_RGB;
-  bitmapInfo.bmiHeader.biSizeImage     = 0;
-  bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
-  bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
-  bitmapInfo.bmiHeader.biClrUsed       = 0;
-  bitmapInfo.bmiHeader.biClrImportant  = 0;
 
-  // CreateDIBSection
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
-  bitmapHandle = CreateDIBSection(
-      bitmapDeviceContext, &bitmapInfo, DIB_RGB_COLORS, &bitmapMemory, 0, 0
-  );
+  u32 bytesPerPixel = 4;
+  u32 bitmapMemorySize = (bitmapWidth * bitmapHeight) * bytesPerPixel;
+
+  // VirtualALloc https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc
+  bitmapMemory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
+
+  // NOTE: Any time you add or subtract something from a pointer to move it around in memory,
+  //       C will silently multiply that movement by the size of the thing being pointed to.
+  int pitch = width * bytesPerPixel;
+  u8* row = (u8 *)bitmapMemory;
+  for (int y = 0; y < bitmapHeight; ++y) {
+    u8* pixel = (u8 *)row;
+    for (int x = 0; x < bitmapWidth; ++x) {
+      /*
+                           1  2  3  4
+        Pixel in memory:  00 00 00 00
+                          RR GG BB xx
+        LITTLE ENDIAN     BB GG RR xx
+      */
+      *pixel = 0;
+      ++pixel;
+
+      *pixel = 255;
+      ++pixel;
+
+      *pixel = 0;
+      ++pixel;
+
+      *pixel = 0;
+      ++pixel;
+    }
+
+    row += pitch;
+  }
 }
 
 internal void
-win32UpdateWindow(HDC deviceContext, u32 x, u32 y, u32 width, u32 height)
+win32UpdateWindow(HDC deviceContext, RECT* windowRect, u32 x, u32 y, u32 width, u32 height)
 {
+  /*
+    Stride: is the number of bytes from one row of pixels in memory to the next row of pixels in memory
+    Stride is also called pitch. If padding bytes are present, the stride is wider than the width of the image,
+    as shown in the following illustration.
+  */
+
+  u32 windowWidth = windowRect->right - windowRect->left;
+  u32 windowHeight = windowRect->top - windowRect->bottom;
+
   // StretchDIBits
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-stretchdibits
   StretchDIBits(
       deviceContext,
-      x,
-      y,
-      width,
-      height,
-      x,
-      y,
-      width,
-      height,
-      &bitmapMemory,
+      0,//x,
+      0,//y,
+      bitmapWidth,
+      bitmapHeight,
+      0,//x,
+      0,//y,
+      windowWidth,
+      windowHeight,
+      bitmapMemory,
       &bitmapInfo,
       DIB_RGB_COLORS,
       SRCCOPY
@@ -93,26 +148,11 @@ win32UpdateWindow(HDC deviceContext, u32 x, u32 y, u32 width, u32 height)
 wchar_t const CLASS_NAME[] = L"Sample Window Class";
 
 LRESULT CALLBACK
-win32WndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
+win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   LRESULT result = 0;
 
   switch (msg) {
-    case WM_SIZE: {
-      RECT clientRect;
-      // GetClientRect
-      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getclientrect
-      GetClientRect(window, &clientRect);
-
-      u32 width  = clientRect.right - clientRect.left;
-      u32 height = clientRect.bottom - clientRect.top;
-
-      win32ResizeDIBSection(width, height);
-
-      // OutputDebugStringA
-      // https://learn.microsoft.com/en-us/windows/win32/api/debugapi/nf-debugapi-outputdebugstringa
-      OutputDebugStringA("WM_SIZE\n");
-    } break;
     case WM_DESTROY: {
       // running = false;
       OutputDebugStringA("WM_DESTROY!\n");
@@ -122,7 +162,7 @@ win32WndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
     } break;
     case WM_CLOSE: {
       // running = false;
-      DestroyWindow(window);
+      DestroyWindow(windowHandle);
     } break;
     case WM_ACTIVATEAPP: {
       OutputDebugStringA("WM_ACTIVEAPP\n");
@@ -134,9 +174,10 @@ win32WndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
       // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
       // EndPaint
       // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-endpaint
-      PAINTSTRUCT paint;
+      static PAINTSTRUCT paint;
+      static HDC deviceContext;
 
-      HDC deviceContext = BeginPaint(window, &paint);
+      deviceContext = BeginPaint(windowHandle, &paint);
 
       DWORD rasterOp = BLACKNESS;
 
@@ -145,23 +186,79 @@ win32WndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
       u32 height = paint.rcPaint.bottom - paint.rcPaint.top;
       u32 width  = paint.rcPaint.right - paint.rcPaint.left;
 
+      //RECT clientRect;
+      //GetClientRect(windowHandle, &clientRect);
+
+      //win32UpdateWindow(deviceContext, &clientRect, x, y, width, height);
+
+      // BitBlt https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
+      BitBlt(
+        deviceContext,
+        x,
+        y,
+        width,
+        height,
+        frameDeviceContext,
+        paint.rcPaint.left,
+        paint.rcPaint.top,
+        SRCCOPY
+      );
+
       // PatBlt
       // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-patblt
-      PatBlt(
-          // A handle to the device context.
-          deviceContext,
-          // Size and position args
-          x,
-          y,
-          width,
-          height,
-          // The raster operation code
-          rasterOp
-      );
-      EndPaint(window, &paint);
+      //PatBlt(
+      //    // A handle to the device context.
+      //    deviceContext,
+      //    // Size and position args
+      //    x,
+      //    y,
+      //    width,
+      //    height,
+      //    // The raster operation code
+      //    rasterOp
+      //);
+      EndPaint(windowHandle, &paint);
     }
+    case WM_SIZE: {
+      bitmapInfo.bmiHeader.biWidth = LOWORD(lParam);
+      bitmapInfo.bmiHeader.biHeight = HIWORD(lParam);
+
+      if (frameBitmap) {
+        DeleteObject(frameBitmap);
+      }
+
+      // CreateDIBSection https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
+      CreateDIBSection(
+        NULL,
+        &bitmapInfo,
+        DIB_RGB_COLORS,
+        &frame.pixels,
+        0,
+        0
+      );
+
+      // SelectObject https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject
+      SelectObject(frameDeviceContext, frameBitmap);
+
+      frame.width = LOWORD(lParam);
+      frame.height = HIWORD(lParam);
+
+      //RECT clientRect;
+      // GetClientRect
+      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getclientrect
+      //GetClientRect(windowHandle, &clientRect);
+
+      //u32 width  = clientRect.right - clientRect.left;
+      //u32 height = clientRect.bottom - clientRect.top;
+
+      //win32ResizeDIBSection(width, height);
+
+      // OutputDebugStringA
+      // https://learn.microsoft.com/en-us/windows/win32/api/debugapi/nf-debugapi-outputdebugstringa
+      OutputDebugStringA("WM_SIZE\n");
+    } break;
     default: {
-      result = DefWindowProc(window, msg, wParam, lParam);
+      result = DefWindowProc(windowHandle, msg, wParam, lParam);
     }
   }
 
@@ -170,6 +267,11 @@ win32WndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
 
 // https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-winmain
 // https://learn.microsoft.com/en-us/windows/win32/learnwin32/winmain--the-application-entry-point
+/**
+ * Entrypoint for Windows
+ * https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-winmain
+ * https://learn.microsoft.com/en-us/windows/win32/learnwin32/winmain--the-application-entry-point
+ */
 int WINAPI WinMain(
     HINSTANCE hInstance,
     HINSTANCE hPrevInstance,
@@ -177,18 +279,18 @@ int WINAPI WinMain(
     int nCmdShow
 )
 {
-  MessageBox(NULL, TEXT("Hello, Windows 98!"), TEXT("HelloMsg"), 0);
+  //MessageBox(NULL, TEXT("Hello, Windows 98!"), TEXT("HelloMsg"), 0);
 
   // GetStdHandle
   // https://learn.microsoft.com/en-us/windows/console/getstdhandle?redirectedfrom=MSDN
-  HANDLE stdout = GetStdHandle(STD_OUTPUT_HANDLE);
-  if (stdout && stdout != INVALID_HANDLE_VALUE) {
-    DWORD written       = 0;
-    char const* message = "foo bar";
-    // WriteConsole
-    // https://learn.microsoft.com/en-us/windows/console/writeconsole
-    WriteConsole(stdout, message, strlen(message), &written, NULL);
-  }
+  //HANDLE stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+  //if (stdout && stdout != INVALID_HANDLE_VALUE) {
+  //  DWORD written       = 0;
+  //  char const* message = "foo bar";
+  //  // WriteConsole
+  //  // https://learn.microsoft.com/en-us/windows/console/writeconsole
+  //  WriteConsole(stdout, message, strlen(message), &written, NULL);
+  //}
 
   // wc.lpfnWndProc		= WindowProc;
   // wc.hInstance			= hInstance;
@@ -204,8 +306,10 @@ int WINAPI WinMain(
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexa
   // WNDCLASSEXA wc = {};
   WNDCLASSEX wc;
-  HWND hwnd;
-  MSG msg;
+
+  // Window handle for
+  HWND windowHandle;
+  static MSG msg = {0};
 
   wc.cbSize        = sizeof(WNDCLASSEX);
   wc.style         = 0;
@@ -272,7 +376,7 @@ int WINAPI WinMain(
   //  lpParam
   //);
 
-  hwnd = CreateWindowEx(
+  windowHandle = CreateWindowEx(
       0,          // WS_EX_CLIENTEDGE,
       CLASS_NAME, // g_szClassName,
       L"The title of my window",
@@ -287,30 +391,43 @@ int WINAPI WinMain(
       NULL
   );
 
-  if (hwnd == NULL) {
+  if (windowHandle == NULL) {
     MessageBox(
         NULL, L"Window Creation Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK
     );
-    return 0;
+    return -1;
   }
 
   // ShowWindow
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
-  ShowWindow(hwnd, nCmdShow);
+  //ShowWindow(hwnd, nCmdShow);
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatewindow
-  UpdateWindow(hwnd);
+  //UpdateWindow(hwnd);
 
-  // Run the message loop
-  // https://learn.microsoft.com/en-us/windows/win32/winmsg/using-messages-and-message-queues
-  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmessage
-  while (GetMessage(&msg, NULL, 0, 0) > 0) {
-    TranslateMessage(&msg);
-    DispatchMessage(&msg);
+  while (running) {
+    // Run the message loop
+    // https://learn.microsoft.com/en-us/windows/win32/winmsg/using-messages-and-message-queues
+    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmessage
+    while (GetMessage(&msg, NULL, 0, 0) > 0) {
+      TranslateMessage(&msg);
+      DispatchMessage(&msg);
+    }
+
+    static unsigned int p = 0;
+    frame.pixels[(p++) % (frame.width * frame.height)] = Rand32();
+    frame.pixels[Rand32() % (frame.width * frame.height)] = 0;
+
+    InvalidateRect(windowHandle, NULL, FALSE);
+    UpdateWindow(windowHandle);
   }
 
   return msg.wParam;
 }
 #endif
+
+/*
+ * Linux entrypoint
+ */
 
 #if defined(__linux__)
 #  include <stdio.h>
