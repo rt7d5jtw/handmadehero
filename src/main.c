@@ -20,23 +20,29 @@
 #  endif
 
 #  include <windows.h>
-#endif
 
-#if defined(_WIN32)
+#  define GetlParamX(lp) ((int)(short)LOWORD(lp))
+#  define GetlParamY(lp) ((int)(short)HIWORD(lp))
+
+void* memory;
+int clientWidth;
+int clientHeight;
 
 #  include <stdbool.h>
 
-#if RAND_MAX == 32767
-#  define Rand32() ((rand() << 16) + (rand() << 1) + (rand() & 1))
-#else
-#  define Rand32() rand()
-#endif
+#  if RAND_MAX == 32767
+#    define Rand32() ((rand() << 16) + (rand() << 1) + (rand() & 1))
+#  else
+#    define Rand32() rand()
+#  endif
 
 /*
   Device-Independent Bitmaps (DIB) https://learn.microsoft.com/en-us/windows/win32/gdi/device-independent-bitmaps
 */
 
 global bool running;
+
+const wchar_t CLASS_NAME[] = L"Sample Window Class";
 
 struct {
   u32 width;
@@ -49,12 +55,26 @@ global BITMAPINFO bitmapInfo;
 global void* bitmapMemory;
 
 // Handle to a GDI bitmap, encapsulates the info and array data
-global HBITMAP frameBitmap;
+global HBITMAP frameBitmap = 0;
 // Device context handle to point to the bitmap handle
 global HDC frameDeviceContext = 0;
 
+global void* bitmapMemory;
 global u32 bitmapWidth;
 global u32 bitmapHeight;
+
+void drawPixel(int x, int y, u32 color) {
+  u32* pixel = (u32*) bitmapMemory;
+  pixel += y * clientWidth + x;
+  *pixel = color;
+}
+
+void clearScreen(u32 color) {
+  u32* pixel = (u32*) bitmapMemory;
+  for (int i = 0; i < clientWidth * clientHeight; ++i) {
+    *pixel++ = color;
+  }
+}
 
 // GDI is Windows Graphics API
 
@@ -144,118 +164,36 @@ win32UpdateWindow(HDC deviceContext, RECT* windowRect, u32 x, u32 y, u32 width, 
   );
 }
 
-// https://learn.microsoft.com/en-us/windows/win32/learnwin32/creating-a-window
-wchar_t const CLASS_NAME[] = L"Sample Window Class";
-
 LRESULT CALLBACK
 win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   LRESULT result = 0;
 
   switch (msg) {
+    case WM_KEYDOWN:
+    {
+      switch (wParam) {
+        // Close window from 'Q'
+        case 'Q':
+        {
+          DestroyWindow(windowHandle);
+        }
+      }
+    } break;
+    case WM_MOUSEMOVE: {
+      if (wParam == MK_LBUTTON) {
+        drawPixel(
+          GetlParamX(lParam),
+          GetlParamY(lParam),
+          0xffffff
+        );
+      }
+      break;
+    }
     case WM_DESTROY: {
-      // running = false;
-      OutputDebugStringA("WM_DESTROY!\n");
       // PostQuitMessage(int nExitCode)
       // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postquitmessage
       PostQuitMessage(0);
-    } break;
-    case WM_CLOSE: {
-      // running = false;
-      DestroyWindow(windowHandle);
-    } break;
-    case WM_ACTIVATEAPP: {
-      OutputDebugStringA("WM_ACTIVEAPP\n");
-    } break;
-    case WM_PAINT: {
-      // PAINTSTRUCT
-      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-paintstruct
-      // BeginPaint
-      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
-      // EndPaint
-      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-endpaint
-      static PAINTSTRUCT paint;
-      static HDC deviceContext;
-
-      deviceContext = BeginPaint(windowHandle, &paint);
-
-      DWORD rasterOp = BLACKNESS;
-
-      u32 x      = paint.rcPaint.left;
-      u32 y      = paint.rcPaint.top;
-      u32 height = paint.rcPaint.bottom - paint.rcPaint.top;
-      u32 width  = paint.rcPaint.right - paint.rcPaint.left;
-
-      //RECT clientRect;
-      //GetClientRect(windowHandle, &clientRect);
-
-      //win32UpdateWindow(deviceContext, &clientRect, x, y, width, height);
-
-      // BitBlt https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
-      BitBlt(
-        deviceContext,
-        x,
-        y,
-        width,
-        height,
-        frameDeviceContext,
-        paint.rcPaint.left,
-        paint.rcPaint.top,
-        SRCCOPY
-      );
-
-      // PatBlt
-      // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-patblt
-      //PatBlt(
-      //    // A handle to the device context.
-      //    deviceContext,
-      //    // Size and position args
-      //    x,
-      //    y,
-      //    width,
-      //    height,
-      //    // The raster operation code
-      //    rasterOp
-      //);
-      EndPaint(windowHandle, &paint);
-    }
-    case WM_SIZE: {
-      bitmapInfo.bmiHeader.biWidth = LOWORD(lParam);
-      bitmapInfo.bmiHeader.biHeight = HIWORD(lParam);
-
-      if (frameBitmap) {
-        DeleteObject(frameBitmap);
-      }
-
-      // CreateDIBSection https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
-      CreateDIBSection(
-        NULL,
-        &bitmapInfo,
-        DIB_RGB_COLORS,
-        &frame.pixels,
-        0,
-        0
-      );
-
-      // SelectObject https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject
-      SelectObject(frameDeviceContext, frameBitmap);
-
-      frame.width = LOWORD(lParam);
-      frame.height = HIWORD(lParam);
-
-      //RECT clientRect;
-      // GetClientRect
-      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getclientrect
-      //GetClientRect(windowHandle, &clientRect);
-
-      //u32 width  = clientRect.right - clientRect.left;
-      //u32 height = clientRect.bottom - clientRect.top;
-
-      //win32ResizeDIBSection(width, height);
-
-      // OutputDebugStringA
-      // https://learn.microsoft.com/en-us/windows/win32/api/debugapi/nf-debugapi-outputdebugstringa
-      OutputDebugStringA("WM_SIZE\n");
     } break;
     default: {
       result = DefWindowProc(windowHandle, msg, wParam, lParam);
@@ -292,11 +230,11 @@ int WINAPI WinMain(
   //  WriteConsole(stdout, message, strlen(message), &written, NULL);
   //}
 
-  // wc.lpfnWndProc		= WindowProc;
-  // wc.hInstance			= hInstance;
-  // wc.lpszClassName	= CLASS_NAME;
+  // windowClass.lpfnWndProc		= WindowProc;
+  // windowClass.hInstance			= hInstance;
+  // windowClass.lpszClassName	= CLASS_NAME;
 
-  // RegisterClass(&wc);
+  // RegisterClass(&windowClass);
 
   // WNDCLASS
   // https://learn.microsoft.com/en-us/previous-versions/ms942860(v=msdn.10)
@@ -305,27 +243,31 @@ int WINAPI WinMain(
   // WNDCLASSEXA
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexa
   // WNDCLASSEXA wc = {};
-  WNDCLASSEX wc;
+
+  // https://learn.microsoft.com/en-us/windows/win32/learnwin32/creating-a-window
+  const wchar_t className[] = L"Sample Window Class";
+  // Contains window class information
+  WNDCLASSEX windowClass = {0};
 
   // Window handle for
   HWND windowHandle;
   static MSG msg = {0};
 
-  wc.cbSize        = sizeof(WNDCLASSEX);
-  wc.style         = 0;
-  wc.lpfnWndProc   = win32WndProc;
-  wc.cbClsExtra    = 0;
-  wc.cbWndExtra    = 0;
-  wc.hInstance     = hInstance;
-  wc.hIcon         = LoadIcon(NULL, IDI_APPLICATION);
-  wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
-  wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-  wc.lpszMenuName  = NULL;
-  // wc.lpszClassName = g_szClassName;
-  wc.lpszClassName = CLASS_NAME;
-  wc.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
+  windowClass.cbSize        = sizeof(WNDCLASSEX);
+  windowClass.style         = 0;
+  windowClass.lpfnWndProc   = win32WndProc;
+  windowClass.cbClsExtra    = 0;
+  windowClass.cbWndExtra    = 0;
+  windowClass.hInstance     = hInstance;
+  windowClass.hIcon         = LoadIcon(NULL, IDI_APPLICATION);
+  windowClass.hCursor       = LoadCursor(NULL, IDC_ARROW);
+  windowClass.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+  windowClass.lpszMenuName  = NULL;
+  // windowClass.lpszClassName = g_szClassName;
+  windowClass.lpszClassName = CLASS_NAME;
+  windowClass.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
 
-  if (!RegisterClassEx(&wc)) {
+  if (!RegisterClassEx(&windowClass)) {
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebox
     MessageBox(
         NULL,
@@ -378,7 +320,7 @@ int WINAPI WinMain(
 
   windowHandle = CreateWindowEx(
       0,          // WS_EX_CLIENTEDGE,
-      CLASS_NAME, // g_szClassName,
+      className, // g_szClassName,
       L"The title of my window",
       WS_OVERLAPPEDWINDOW | WS_VISIBLE,
       CW_USEDEFAULT,
@@ -397,6 +339,34 @@ int WINAPI WinMain(
     );
     return -1;
   }
+
+  if (windowHandle == NULL) {
+    MessageBox(
+        NULL, L"Window Creation Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK
+    );
+    return GetLastError();
+  }
+
+  RECT rect;
+  GetClientRect(windowHandle, &rect);
+  clientWidth = rect.right - rect.left;
+  clientHeight = rect.bottom - rect.top;
+
+  // Create the device context handle
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createcompatibledc
+  frameDeviceContext = CreateCompatibleDC(0);
+
+  // GetDC https://learn.microsoft.com/en-
+  HDC deviceContext = GetDC(windowHandle);
+
+  bitmapMemory = VirtualAlloc(
+    0,
+    clientWidth * clientHeight * 4,
+    MEM_RESERVE | MEM_COMMIT,
+    PAGE_READWRITE
+    );
+
+  running = true;
 
   // ShowWindow
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
