@@ -62,6 +62,7 @@ global HDC frameDeviceContext = 0;
 global void* bitmapMemory;
 global u32 bitmapWidth;
 global u32 bitmapHeight;
+global u32 bytes_per_pixel = 4;
 
 void drawPixel(int x, int y, u32 color) {
   u32* pixel = (u32*) bitmapMemory;
@@ -73,6 +74,27 @@ void clearScreen(u32 color) {
   u32* pixel = (u32*) bitmapMemory;
   for (int i = 0; i < clientWidth * clientHeight; ++i) {
     *pixel++ = color;
+  }
+}
+
+internal void RenderWeirdGradient(u32 x_offset, u32 y_offset) {
+  int width = bitmapWidth;
+  int height = bitmapHeight;
+
+  // Pitch is the distance, in bytes, between two memory addresses that represent the beginning of one bitmap line and the beginning of the next bitmap line. Because pitch is measured in bytes rather than pixels
+  int pitch = width * bytes_per_pixel;
+  u8 *row = (u8 *)bitmapMemory;
+
+  for (int y = 0; y < bitmapHeight; ++y) {
+    u32 *pixel = (u32 *)row;
+    for (int x = 0; x < bitmapWidth; ++x) {
+      u8 blue = (x + x_offset);
+      u8 green = (y + y_offset);
+
+      *pixel++ = ((green << 8) | blue);
+    }
+
+    row += pitch;
   }
 }
 
@@ -376,16 +398,17 @@ int WINAPI WinMain(
 
   while (running) {
     // Run the message loop
-    // https://learn.microsoft.com/en-us/windows/win32/winmsg/using-messages-and-message-queues
-    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmessage
-    while (GetMessage(&msg, NULL, 0, 0) > 0) {
+    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-peekmessagew
+    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-dispatchmessagea
+    while (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE) > 0) {
+      if (msg.message == WM_QUIT) running = false;
       TranslateMessage(&msg);
       DispatchMessage(&msg);
     }
 
-    static unsigned int p = 0;
-    frame.pixels[(p++) % (frame.width * frame.height)] = Rand32();
-    frame.pixels[Rand32() % (frame.width * frame.height)] = 0;
+    //static unsigned int p = 0;
+    //frame.pixels[(p++) % (frame.width * frame.height)] = Rand32();
+    //frame.pixels[Rand32() % (frame.width * frame.height)] = 0;
 
     InvalidateRect(windowHandle, NULL, FALSE);
     UpdateWindow(windowHandle);
