@@ -12,7 +12,7 @@ Alternative: `C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\To
 3. Select variant e.g. Debug, Release etc.
 
 Windows:
-  You can just run: `\build.bat`
+  You can just run: `\build.bat`, but note that this builds executable to: `.\out\main.exe`.
   Alternative with CMake:
   1. `cmake -S . -B build -G "Visual Studio 17 2022" -A x64`
   2. `cmake --build .\build --target ALL_BUILD --config Debug`
