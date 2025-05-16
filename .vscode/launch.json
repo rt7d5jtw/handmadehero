@@ -5,7 +5,7 @@
             "name": "(Windows) Launch",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/Debug/handmade_hero.exe",
+            "program": "${workspaceFolder}/out/main.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",

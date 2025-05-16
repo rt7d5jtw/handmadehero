@@ -20,133 +20,51 @@
 #  endif
 
 #  include <windows.h>
+#  include <stdbool.h>
+
+# define WINDOW_WIDTH  1480
+# define WINDOW_HEIGHT 860
 
 #  define GetlParamX(lp) ((int)(short)LOWORD(lp))
 #  define GetlParamY(lp) ((int)(short)HIWORD(lp))
-
-void* memory;
-int clientWidth;
-int clientHeight;
-
-#  include <stdbool.h>
-
-#  if RAND_MAX == 32767
-#    define Rand32() ((rand() << 16) + (rand() << 1) + (rand() & 1))
-#  else
-#    define Rand32() rand()
-#  endif
 
 /*
   Device-Independent Bitmaps (DIB) https://learn.microsoft.com/en-us/windows/win32/gdi/device-independent-bitmaps
 */
 
-global bool running;
-
-const wchar_t CLASS_NAME[] = L"Sample Window Class";
-
+// START OF GDI Drawing declarations {{{
 struct {
   u32 width;
   u32 height;
-  u32 *pixels;
+  u32 *pixels; // pixel array for the bitmap
 } frame = {0};
 
-// Tells GDI the dimensions and color info for DBI, https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfo
-global BITMAPINFO bitmapInfo;
-global void* bitmapMemory;
+static BITMAPINFO frameBitmapInfo;
+static HBITMAP frameBitmap = 0;
+static HDC frameDeviceContext = 0;
 
-// Handle to a GDI bitmap, encapsulates the info and array data
-global HBITMAP frameBitmap = 0;
-// Device context handle to point to the bitmap handle
-global HDC frameDeviceContext = 0;
+u32 bytes_per_pixel = 4;
 
-global void* bitmapMemory;
-global u32 bitmapWidth;
-global u32 bitmapHeight;
-global u32 bytes_per_pixel = 4;
+void draw_random_gradient(u32 *bitmap_memory, u32 bitmap_width, u32 bitmap_height, u32 x_offset, u32 y_offset) {
+  u32 pitch = bitmap_width * bytes_per_pixel;
+  u8 *row = (u8 *)bitmap_memory;
 
-void drawPixel(int x, int y, u32 color) {
-  u32* pixel = (u32*) bitmapMemory;
-  pixel += y * clientWidth + x;
-  *pixel = color;
-}
+  for (u32 y = 0; y < bitmap_height; ++y) {
+    u8 *pixel = (u8 *)row;
+    for (u32 x = 0; x < bitmap_width; ++x) {
+      // Blue channel
+      *pixel = (u8)(x + x_offset);
+      ++pixel;
 
-void clearScreen(u32 color) {
-  u32* pixel = (u32*) bitmapMemory;
-  for (int i = 0; i < clientWidth * clientHeight; ++i) {
-    *pixel++ = color;
-  }
-}
+      // Green channel
+      *pixel = (u8)(y + y_offset);
+      ++pixel;
 
-internal void RenderWeirdGradient(u32 x_offset, u32 y_offset) {
-  int width = bitmapWidth;
-  int height = bitmapHeight;
-
-  // Pitch is the distance, in bytes, between two memory addresses that represent the beginning of one bitmap line and the beginning of the next bitmap line. Because pitch is measured in bytes rather than pixels
-  int pitch = width * bytes_per_pixel;
-  u8 *row = (u8 *)bitmapMemory;
-
-  for (int y = 0; y < bitmapHeight; ++y) {
-    u32 *pixel = (u32 *)row;
-    for (int x = 0; x < bitmapWidth; ++x) {
-      u8 blue = (x + x_offset);
-      u8 green = (y + y_offset);
-
-      *pixel++ = ((green << 8) | blue);
-    }
-
-    row += pitch;
-  }
-}
-
-// GDI is Windows Graphics API
-
-internal void win32ResizeDIBSection(u32 width, u32 height)
-{
-  if (bitmapMemory) {
-   // VirtualFree https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfree
-   VirtualFree(bitmapMemory, 0, MEM_RELEASE);
-  }
-
-  bitmapWidth = width;
-  bitmapHeight = height;
-
-  // BITMAPINFO
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfo
-  bitmapInfo.bmiHeader.biSize          = sizeof(bitmapInfo.bmiHeader);
-  bitmapInfo.bmiHeader.biWidth         = bitmapWidth;
-  bitmapInfo.bmiHeader.biHeight        = -bitmapHeight;
-  bitmapInfo.bmiHeader.biPlanes        = 1;
-  bitmapInfo.bmiHeader.biBitCount      = 32;
-  bitmapInfo.bmiHeader.biCompression   = BI_RGB;
-
-  u32 bytesPerPixel = 4;
-  u32 bitmapMemorySize = (bitmapWidth * bitmapHeight) * bytesPerPixel;
-
-  // VirtualALloc https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc
-  bitmapMemory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
-
-  // NOTE: Any time you add or subtract something from a pointer to move it around in memory,
-  //       C will silently multiply that movement by the size of the thing being pointed to.
-  int pitch = width * bytesPerPixel;
-  u8* row = (u8 *)bitmapMemory;
-  for (int y = 0; y < bitmapHeight; ++y) {
-    u8* pixel = (u8 *)row;
-    for (int x = 0; x < bitmapWidth; ++x) {
-      /*
-                           1  2  3  4
-        Pixel in memory:  00 00 00 00
-                          RR GG BB xx
-        LITTLE ENDIAN     BB GG RR xx
-      */
+      // Red channel
       *pixel = 0;
       ++pixel;
 
-      *pixel = 255;
-      ++pixel;
-
-      *pixel = 0;
-      ++pixel;
-
+      // Alpha channel
       *pixel = 0;
       ++pixel;
     }
@@ -155,78 +73,14 @@ internal void win32ResizeDIBSection(u32 width, u32 height)
   }
 }
 
-internal void
-win32UpdateWindow(HDC deviceContext, RECT* windowRect, u32 x, u32 y, u32 width, u32 height)
-{
-  /*
-    Stride: is the number of bytes from one row of pixels in memory to the next row of pixels in memory
-    Stride is also called pitch. If padding bytes are present, the stride is wider than the width of the image,
-    as shown in the following illustration.
-  */
+/// }}}
 
-  u32 windowWidth = windowRect->right - windowRect->left;
-  u32 windowHeight = windowRect->top - windowRect->bottom;
+/* main loop */
+bool running = true;
 
-  // StretchDIBits
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-stretchdibits
-  StretchDIBits(
-      deviceContext,
-      0,//x,
-      0,//y,
-      bitmapWidth,
-      bitmapHeight,
-      0,//x,
-      0,//y,
-      windowWidth,
-      windowHeight,
-      bitmapMemory,
-      &bitmapInfo,
-      DIB_RGB_COLORS,
-      SRCCOPY
-  );
-}
+/* Forward declaration */
+LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
 
-LRESULT CALLBACK
-win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-  LRESULT result = 0;
-
-  switch (msg) {
-    case WM_KEYDOWN:
-    {
-      switch (wParam) {
-        // Close window from 'Q'
-        case 'Q':
-        {
-          DestroyWindow(windowHandle);
-        }
-      }
-    } break;
-    case WM_MOUSEMOVE: {
-      if (wParam == MK_LBUTTON) {
-        drawPixel(
-          GetlParamX(lParam),
-          GetlParamY(lParam),
-          0xffffff
-        );
-      }
-      break;
-    }
-    case WM_DESTROY: {
-      // PostQuitMessage(int nExitCode)
-      // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postquitmessage
-      PostQuitMessage(0);
-    } break;
-    default: {
-      result = DefWindowProc(windowHandle, msg, wParam, lParam);
-    }
-  }
-
-  return result;
-}
-
-// https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-winmain
-// https://learn.microsoft.com/en-us/windows/win32/learnwin32/winmain--the-application-entry-point
 /**
  * Entrypoint for Windows
  * https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-winmain
@@ -239,182 +93,215 @@ int WINAPI WinMain(
     int nCmdShow
 )
 {
-  //MessageBox(NULL, TEXT("Hello, Windows 98!"), TEXT("HelloMsg"), 0);
-
-  // GetStdHandle
-  // https://learn.microsoft.com/en-us/windows/console/getstdhandle?redirectedfrom=MSDN
-  //HANDLE stdout = GetStdHandle(STD_OUTPUT_HANDLE);
-  //if (stdout && stdout != INVALID_HANDLE_VALUE) {
-  //  DWORD written       = 0;
-  //  char const* message = "foo bar";
-  //  // WriteConsole
-  //  // https://learn.microsoft.com/en-us/windows/console/writeconsole
-  //  WriteConsole(stdout, message, strlen(message), &written, NULL);
-  //}
-
-  // windowClass.lpfnWndProc		= WindowProc;
-  // windowClass.hInstance			= hInstance;
-  // windowClass.lpszClassName	= CLASS_NAME;
-
-  // RegisterClass(&windowClass);
-
   // WNDCLASS
   // https://learn.microsoft.com/en-us/previous-versions/ms942860(v=msdn.10)
   // WNDCLASSA
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassa
   // WNDCLASSEXA
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexa
-  // WNDCLASSEXA wc = {};
 
-  // https://learn.microsoft.com/en-us/windows/win32/learnwin32/creating-a-window
-  const wchar_t className[] = L"Sample Window Class";
   // Contains window class information
   WNDCLASSEX windowClass = {0};
 
-  // Window handle for
-  HWND windowHandle;
+  // https://learn.microsoft.com/en-us/windows/win32/learnwin32/creating-a-window
+  const wchar_t window_class_name[] = L"Sample Window Class";
+
+  HWND windowHandle = NULL;
   static MSG msg = {0};
 
   windowClass.cbSize        = sizeof(WNDCLASSEX);
   windowClass.style         = 0;
-  windowClass.lpfnWndProc   = win32WndProc;
+  windowClass.lpszClassName = window_class_name;
+  windowClass.lpfnWndProc   = win32WndProc; // Long Pointer to the Windows Procedure function
   windowClass.cbClsExtra    = 0;
   windowClass.cbWndExtra    = 0;
   windowClass.hInstance     = hInstance;
   windowClass.hIcon         = LoadIcon(NULL, IDI_APPLICATION);
   windowClass.hCursor       = LoadCursor(NULL, IDC_ARROW);
-  windowClass.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+  windowClass.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
   windowClass.lpszMenuName  = NULL;
-  // windowClass.lpszClassName = g_szClassName;
-  windowClass.lpszClassName = CLASS_NAME;
   windowClass.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
 
   if (!RegisterClassEx(&windowClass)) {
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebox
     MessageBox(
-        NULL,
-        L"Window Registration Failed!",
-        L"Error!",
+        windowHandle,
+        "Window Registration Failed!",
+        "Error!",
         MB_ICONEXCLAMATION | MB_OK
     );
-    return 0;
+
+    return -1;
   }
 
-  // LPCTSTR
-  // https://softwareengineering.stackexchange.com/questions/194764/what-is-lpctstr
-  // LPCSTR title = "miukumauku";
-  // DWORD dwStyle = WS_OVERLAPPEDWINDOW;
-  // int x = 100;
-  // int y = 100;
-  // int width = 650;
-  // int height = 450;
-  //// handle of the parent window
-  // HWND hWndParent = NULL;
-  //// A handle to a menu
-  // HMENU hMenu = NULL;
-  //// Additiona application data
-  // LPVOID lpParam = NULL;
+  // GDI Drawing code initialization {{{
 
-  // CreateWindowExA
-  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowexa
-  // CreateWindowEx
-  // https://learn.microsoft.com/en-us/previous-versions/ms960010(v=msdn.10)
-  // CreateWindowA
-  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowa
-  // hwnd = CreateWindowExA(
-  //  // dwExStyle
-  //  0,
-  //  // lpClassName
-  //  title,
-  //  // lpWindowName
-  //  title,
-  //  // https://learn.microsoft.com/en-us/windows/win32/winmsg/window-styles
-  //  dwStyle,
-  //  x,
-  //  y,
-  //  width,
-  //  height,
-  //  hWndParent,
-  //  hMenu,
-  //  hInstance,
-  //  lpParam
-  //);
+  // Dimensions and color information for the bitmap
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfo
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfoheader
+  frameBitmapInfo.bmiHeader.biSize        = sizeof(frameBitmapInfo.bmiHeader); // the number of bytes required by the structure
+  frameBitmapInfo.bmiHeader.biPlanes      = 1;                                 // the number of planes for the target device, must be set to 1
+  frameBitmapInfo.bmiHeader.biBitCount    = 32;                                // the number of of bits per pixel (bpp)
+  frameBitmapInfo.bmiHeader.biCompression = BI_RGB;                            // uncompressed RGB format
 
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createcompatibledc
+  frameDeviceContext = CreateCompatibleDC(0);
+
+  /// }}}
+
+  // window parameters
+  DWORD extended_window_style = WS_EX_CLIENTEDGE;
+  LPCWSTR window_name         = L"The title of my window";
+  DWORD window_style          = WS_OVERLAPPEDWINDOW;
+  u32 window_x                = CW_USEDEFAULT; // horizontal position of the window
+  u32 window_y                = CW_USEDEFAULT; // vertical position of the window
+  u32 window_width            = WINDOW_WIDTH;
+  u32 window_height           = WINDOW_HEIGHT;
+  HWND window_parent          = NULL;
+  HMENU window_menu           = NULL;
+  LPVOID lp_param             = NULL;
+
+  // Window handle for
   windowHandle = CreateWindowEx(
-      0,          // WS_EX_CLIENTEDGE,
-      className, // g_szClassName,
-      L"The title of my window",
-      WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-      CW_USEDEFAULT,
-      CW_USEDEFAULT,
-      CW_USEDEFAULT,
-      CW_USEDEFAULT,
-      NULL,
-      NULL,
-      hInstance,
-      NULL
+    extended_window_style,
+    window_class_name,
+    window_name,
+    window_style,
+    window_x,
+    window_y,
+    window_width,
+    window_height,
+    window_parent,
+    window_menu,
+    hInstance,
+    lp_param
   );
 
   if (windowHandle == NULL) {
     MessageBox(
-        NULL, L"Window Creation Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK
-    );
-    return -1;
-  }
-
-  if (windowHandle == NULL) {
-    MessageBox(
-        NULL, L"Window Creation Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK
+      windowHandle,
+      "Window Creation Failed!",
+      "Error!",
+      MB_ICONEXCLAMATION | MB_OK
     );
     return GetLastError();
   }
 
-  RECT rect;
-  GetClientRect(windowHandle, &rect);
-  clientWidth = rect.right - rect.left;
-  clientHeight = rect.bottom - rect.top;
-
-  // Create the device context handle
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createcompatibledc
-  frameDeviceContext = CreateCompatibleDC(0);
-
-  // GetDC https://learn.microsoft.com/en-
-  HDC deviceContext = GetDC(windowHandle);
-
-  bitmapMemory = VirtualAlloc(
-    0,
-    clientWidth * clientHeight * 4,
-    MEM_RESERVE | MEM_COMMIT,
-    PAGE_READWRITE
-    );
-
-  running = true;
-
   // ShowWindow
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
-  //ShowWindow(hwnd, nCmdShow);
-  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatewindow
-  //UpdateWindow(hwnd);
+  ShowWindow(windowHandle, nCmdShow);
+
+  u32 x_offset = 0;
+  u32 y_offset = 0;
 
   while (running) {
     // Run the message loop
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-peekmessagew
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-dispatchmessagea
-    while (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE) > 0) {
+    while (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE)) {
       if (msg.message == WM_QUIT) running = false;
       TranslateMessage(&msg);
       DispatchMessage(&msg);
     }
 
-    //static unsigned int p = 0;
-    //frame.pixels[(p++) % (frame.width * frame.height)] = Rand32();
-    //frame.pixels[Rand32() % (frame.width * frame.height)] = 0;
+    // GDI Drawing logic {{{
 
-    InvalidateRect(windowHandle, NULL, FALSE);
-    UpdateWindow(windowHandle);
+    draw_random_gradient(frame.pixels, frame.width, frame.height, x_offset, y_offset);
+    ++x_offset;
+
+    /*
+     InvalidateRect marks a section of the window invalid and
+     needing to be redrawn. Passing in NULL invalidates the entire window.
+
+     UpdateWindow immediately passes a WM_PAINT message to the
+     window process message function, rather than waiting for
+     the next message processing loop. This allows us to redraw
+     the window whenever we want rather than waiting for Windows to tell us to.
+    */
+
+    InvalidateRect(windowHandle, NULL, FALSE); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-invalidaterect
+    UpdateWindow(windowHandle);                // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatewindow
+    // }}}
   }
 
   return msg.wParam;
+}
+
+/** Windows Message Callback function */
+LRESULT CALLBACK
+win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+  LRESULT result = 0;
+  switch (msg) {
+    case WM_KEYDOWN:
+    {
+      switch (wParam) {
+        // Close window from 'Q'
+        case 'Q':
+        {
+          DestroyWindow(windowHandle);
+        }
+      }
+    } break;
+    case WM_QUIT:
+    case WM_DESTROY: {
+      running = false;
+    } break;
+    // GDI Drawing logic {{{
+    case WM_PAINT: {
+      static PAINTSTRUCT paint;
+      static HDC deviceContext;
+
+      deviceContext = BeginPaint(windowHandle, &paint); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
+
+      // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
+      // Painting function to copy the pixel array over to the window in the specified rectangle
+      BitBlt(
+        deviceContext,
+        paint.rcPaint.left,
+        paint.rcPaint.top,
+        paint.rcPaint.right - paint.rcPaint.left,
+        paint.rcPaint.bottom - paint.rcPaint.top,
+        frameDeviceContext,
+        paint.rcPaint.left,
+        paint.rcPaint.top,
+        SRCCOPY
+      );
+
+      EndPaint(windowHandle, &paint); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
+    } break;
+    // Set the size of the pixel array and finish setting up GDI bitmap
+    case WM_SIZE: {
+      frameBitmapInfo.bmiHeader.biWidth  = LOWORD(lParam);
+      frameBitmapInfo.bmiHeader.biHeight = HIWORD(lParam);
+
+      // Delete already existing bitmap
+      if (frameBitmap) DeleteObject(frameBitmap);
+
+      // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
+      // Create a bitmap
+      frameBitmap = CreateDIBSection(
+        NULL,                    /* hdc      - Handle to a device context */
+        &frameBitmapInfo,        /* pbmi     - Pointer to bitmap info */
+        DIB_RGB_COLORS,          /* usage    - type of data contained in the bmiColors array member of the BITMAPINFO structure pointed to by pbmi */
+        (void **)&frame.pixels,  /* ppvBits  - a pointer to a variable that receives a pointer ot the location of the DIB bit values */
+         0,                      /* hSection - a handle to a file-mapping object that hte function will use to create the DIB. */
+         0                       /* offset   - the offset form the beginning of the file-mapping object referenced by hSection where storage for the bitmap bit values is to begin */
+        );
+
+      // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject
+      // point device context to the bitmap
+      SelectObject(frameDeviceContext, frameBitmap);
+
+      frame.width  = LOWORD(lParam);
+      frame.height = HIWORD(lParam);
+    } break;
+    /// }}}
+    default: {
+      result = DefWindowProc(windowHandle, msg, wParam, lParam);
+    }
+  }
+  return result;
 }
 #endif
 
