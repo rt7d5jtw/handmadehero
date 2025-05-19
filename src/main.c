@@ -1,17 +1,103 @@
 #include <stdint.h>
-#define u8  uint8_t
-#define u16 uint16_t
-#define u32 uint32_t
-#define u64 uint64_t
-
-#define s8  int8_t
-#define s16 int16_t
-#define s32 int32_t
-#define s64 int64_t
+#include <stdio.h>
+#include <stdlib.h>
 
 #define internal static
 #define local    static
 #define global   static
+
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+
+typedef int8_t  s8;
+typedef int16_t s16;
+typedef int32_t s32;
+typedef int64_t s64;
+
+typedef size_t usize;
+
+// BMP stuff {{{
+
+// source: https://engineering.purdue.edu/ece264/16au/hw/HW13
+// source: http://www.ece.ualberta.ca/~elliott/ee552/studentAppNotes/2003_w/misc/bmp_file_format/bmp_file_format.htm
+// For 24-bit representation, 8 bits (1 byte) for RED, 8 bits for GREEN, and 8 bits for BLUE.
+
+typedef struct BMPHeader BMPHeader;
+struct BMPHeader {
+  u16 signature;        // 0x4d42 or "BM", 0x42 0x4d
+  u32 filesize;
+  u16 reserved;
+  u16 reserved2;
+  u32 offset;           // Offset to image data in bytes from beginning of file (54 bytes)
+  u32 dib_header_size;  // DIB header size in bytes (40 bytes)
+  u32 image_width;
+  u32 image_height;
+  u16 number_of_color_planes;
+  u16 bits_per_pixel;
+  u32 compression_type;
+  u32 image_size;
+  s32 x_resolution_ppm; // pixels per meter
+  s32 y_resolution_ppm; // pixels per meter
+  u32 number_of_colors;
+  u32 important_colors;
+};
+
+typedef struct BMPImage BMPImage;
+struct BMPImage {
+  BMPHeader header;
+  unsigned char * data;
+};
+
+void print_bmp_image_fields(BMPImage bmp_image) {
+  printf(
+    "BMP Image { signature = %#010x, filesize = %#010x, offset = %#010x, dib_header_size = %#010x, image_width = %d, image_height = %d }\n", 
+     bmp_image.header.signature,
+     bmp_image.header.filesize,
+     bmp_image.header.offset,
+     bmp_image.header.dib_header_size,
+     bmp_image.header.image_width,
+     bmp_image.header.image_height
+  );
+}
+
+BMPImage read_bmp_file(char* filepath) {
+  BMPImage bmp_image = {0};
+  FILE* file = fopen(filepath, "rb");
+
+  if (file) {
+    fseek(file, 0, SEEK_END);
+    size_t filesize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    void * buffer = malloc(filesize = 1);
+    (void)buffer;
+
+    // https://www.tutorialspoint.com/c_standard_library/c_function_fread.htm
+    // https://cplusplus.com/reference/cstdio/fread/
+    // FIX: read each section with fread
+    printf("size of BMPImage struct -> %lu\n", sizeof(BMPImage));
+
+    usize signature_result = fread(&bmp_image.header.signature, 2, 1, file);
+    if (signature_result != 1) fprintf(stderr, "Error reading BMP file signature %s\n", filepath);
+    else printf("BMPImage.signature = %#010x\n", bmp_image.header.signature);
+
+    usize filesize_result = fread(&bmp_image.header.filesize, 4, 1, file);
+    if (filesize_result != 1) fprintf(stderr, "Error reading BMP file size %s\n", filepath);
+    else printf("BMPImage.filesize = %#010x\n", bmp_image.header.filesize);
+
+    //usize result = fread(&bmp_image, sizeof(BMPImage), 1, file);
+    //if (result != 1) fprintf(stderr, "Error reading BMP file %s\n", filepath);
+    //else print_bmp_image_fields(bmp_image);
+
+    fclose(file);
+  }
+
+  return bmp_image;
+}
+
+// }}}
 
 #if defined(_WIN32)
 
@@ -380,6 +466,10 @@ GC create_x11_graphics_context(Display* display, Window window, int reverse_vide
 int main(void)
 {
   syscall(SYS_write, 1, "I like pancakes\n", 17);
+
+  BMPImage bmp_image = read_bmp_file("rect.bmp");
+  (void)bmp_image;
+  //printf("bmp_image -> %d", (int*)bmp_image);
 
   u32 x                = 0;
   u32 y                = 0;
