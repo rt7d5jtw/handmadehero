@@ -155,11 +155,11 @@ BMPImage read_bmp_file(char* filepath)
     //fread(&third, sizeof(u8), 1, file);
     //printf("third byte -> %d\n", third);
 
-    //u8 mydata[3];
-    u8* mydata;
+    //u8 mydata[192];
+    //u8* mydata;
 
     // https://man7.org/linux/man-pages/man2/mmap.2.html
-    void * pages = mmap(NULL, bmp_image.header.image_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    u8* pages = (u8*)mmap(NULL, bmp_image.header.image_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
     if (pages == MAP_FAILED) {
       perror("mmap");
@@ -168,12 +168,20 @@ BMPImage read_bmp_file(char* filepath)
 
     //bmp_image.data = pages;
 
-    fread(pages, sizeof(u8*), bmp_image.header.image_size, file);
+    fread(pages, sizeof(u8), bmp_image.header.image_size, file);
+    printf("\n");
+    for (u8 i = 0; i < bmp_image.header.image_size; i += 1) {
+      printf("pages[%d] -> %#010x\n", i, *(pages + i));
+    }
+    //for (u8 i = 0; i < 192; i += 1) {
+    //  printf("mydata[%d] -> %#010x\n", i, mydata[i]);
+    //}
+    //fread(pages, sizeof(u8*), bmp_image.header.image_size, file);
 
-    printf("0x1  -> %d\n", *(u8*)(pages + sizeof(u8) * 0));
-    printf("0x2  -> %d\n", *(u8*)(pages + sizeof(u8) * 1));
-    printf("0x3  -> %d\n", *(u8*)(pages + sizeof(u8) * 2));
-    printf("0x18 -> %d\n", *(u8*)(pages + (sizeof(u8) * 23)));
+    //printf("0x1  -> %d\n", *(u8*)(pages + sizeof(u8) * 0));
+    //printf("0x2  -> %d\n", *(u8*)(pages + sizeof(u8) * 1));
+    //printf("0x3  -> %d\n", *(u8*)(pages + sizeof(u8) * 2));
+    //printf("0x18 -> %d\n", *(u8*)(pages + (sizeof(u8) * 23)));
     //printf("mydata -> %d | %d | %d\n", mydata[0], mydata[1], mydata[2]);
 
     // usize result = fread(&bmp_image, sizeof(BMPImage), 1, file);
