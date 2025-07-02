@@ -159,20 +159,30 @@ BMPImage read_bmp_file(char* filepath)
     //u8* mydata;
 
     // https://man7.org/linux/man-pages/man2/mmap.2.html
-    u8* pages = (u8*)mmap(NULL, bmp_image.header.image_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
-    if (pages == MAP_FAILED) {
+    /* addr - hint to the OS kernel to use this address at which the virtual mapping should start in the virtual address space of the process. The value can be specified as NULL to indicate that the kernel can place the virtual mapping anywhere it sees fit. If not NULL, then addr should be a multiple of the page size. */
+    void* addr = NULL;
+    /* length - This argument specifies the length as number of bytes for the mapping. This length should be a multiple of the page size, although the system automatically aligns the length to be multiple of the underlying page size. */
+    u32 mmap_len = bmp_image.header.image_size;
+    /* protection for the mapped memory */
+    u32 mmap_prot = PROT_READ | PROT_WRITE;
+    /* mmap flags */
+    u32 mmap_flags = MAP_ANONYMOUS | MAP_PRIVATE;
+
+    bmp_image.data = (u8*)mmap(addr, mmap_len, mmap_prot, mmap_flags, -1, 0);
+
+    if (bmp_image.data == MAP_FAILED) {
       perror("mmap");
       exit(EXIT_FAILURE);
     }
 
-    //bmp_image.data = pages;
+    fread(bmp_image.data, sizeof(u8), bmp_image.header.image_size, file);
 
-    fread(pages, sizeof(u8), bmp_image.header.image_size, file);
     printf("\n");
     for (u8 i = 0; i < bmp_image.header.image_size; i += 1) {
-      printf("pages[%d] -> %#010x\n", i, *(pages + i));
+      printf("pages[%d] -> %#010x\n", i, *(bmp_image.data + i));
     }
+
     //for (u8 i = 0; i < 192; i += 1) {
     //  printf("mydata[%d] -> %#010x\n", i, mydata[i]);
     //}
