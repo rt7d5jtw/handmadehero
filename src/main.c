@@ -28,6 +28,22 @@ typedef size_t usize;
 // For 24-bit representation, 8 bits (1 byte) for RED, 8 bits for GREEN, and 8
 // bits for BLUE.
 
+// CIEXYZ: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-ciexyz
+typedef struct BMPciexyz BMPciexyz;
+struct BMPciexyz {
+  u32 ciexyz_x;
+  u32 ciexyz_y;
+  u32 ciexyz_z;
+};
+
+// CIEXYZTRIPLE: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-ciexyztriple
+typedef struct CiexyzTriple CiexyzTriple;
+struct CiexyzTriple {
+  BMPciexyz ciexyz_red;
+  BMPciexyz ciexyz_green;
+  BMPciexyz ciexyz_blue;
+};
+
 typedef struct BMPHeader BMPHeader;
 struct BMPHeader {
   u16 signature; // 0x4d42 or "BM", 0x42 0x4d
@@ -35,6 +51,7 @@ struct BMPHeader {
   u16 reserved;
   u16 reserved2;
   u32 offset; // Offset to image data in bytes from beginning of file (54 bytes)
+
   u32 dib_header_size; // DIB header size in bytes (40 bytes)
   u32 image_width;
   u32 image_height;
@@ -42,10 +59,59 @@ struct BMPHeader {
   u16 bits_per_pixel;
   u32 compression_type;
   u32 image_size;
-  s32 x_resolution_ppm; // pixels per meter
-  s32 y_resolution_ppm; // pixels per meter
+  s32 xresolution_ppm; // pixels per meter
+  s32 yresolution_ppm; // pixels per meter
   u32 number_of_colors;
   u32 important_colors;
+};
+
+typedef struct BitmapInfoHeader BitmapInfoHeader;
+struct BitmapInfoHeader {
+  u32 dib_header_size; // DIB header size in bytes (40 bytes)
+  u32 image_width;
+  u32 image_height;
+  u16 number_of_color_planes;
+  u16 bits_per_pixel;
+  u32 compression_type;
+  u32 image_size;
+  s32 xresolution; // pixels per meter
+  s32 yresolution; // pixels per meter
+  u32 number_of_colors;
+  u32 important_colors;
+};
+
+// Photoshop's undocumented info header, adds rgb bit mask
+typedef struct BitmapInfoHeaderV2 BitmapInfoHeaderV2;
+struct BitmapInfoHeaderV2 {
+  u32 bi_red_mask;
+  u32 bi_green_mask;
+  u32 bi_blue_mask;
+};
+
+// Photoshop's alpha channel bitmask
+// https://web.archive.org/web/20150127132443/https://forums.adobe.com/message/3272950
+typedef struct BitmapInfoHeaderV3 BitmapInfoHeaderV3;
+struct BitmapInfoHeaderV3 {
+  u32 bi_alpha_mask;
+};
+
+// V4: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapv4header
+typedef struct BitmapInfoHeaderV4 BitmapInfoHeaderV4;
+struct BitmapInfoHeaderV4 {
+  u32 bi_cs_type;
+  CiexyzTriple bi_endpoints; // umm what?
+  u32 bi_gamma_red;
+  u32 bi_gamma_green;
+  u32 bi_gamma_blue;
+};
+
+// V5: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapv5header
+typedef struct BitmapInfoHeaderV5 BitmapInfoHeaderV5;
+struct BitmapInfoHeaderV5 {
+  u32 bi_intent;
+  u32 bi_profile_data;
+  u32 bi_profile_size;
+  u32 bi_reserved;
 };
 
 //typedef struct BMPColorTable BMPColorTable;
@@ -135,8 +201,8 @@ BMPImage read_bmp_file(char* filepath)
     fread(&bmp_image.header.image_size, sizeof(u32), 1, file);
     printf("image_size -> %d\n", bmp_image.header.image_size);
 
-    fread(&bmp_image.header.x_resolution_ppm, sizeof(s32), 1, file);
-    fread(&bmp_image.header.y_resolution_ppm, sizeof(s32), 1, file);
+    fread(&bmp_image.header.xresolution_ppm, sizeof(s32), 1, file);
+    fread(&bmp_image.header.yresolution_ppm, sizeof(s32), 1, file);
 
     fread(&bmp_image.header.number_of_colors, sizeof(u32), 1, file);
     fread(&bmp_image.header.important_colors, sizeof(u32), 1, file);
@@ -182,6 +248,15 @@ BMPImage read_bmp_file(char* filepath)
     for (u8 i = 0; i < bmp_image.header.image_size; i += 1) {
       printf("pages[%d] -> %#010x\n", i, *(bmp_image.data + i));
     }
+
+    FILE* new_bmp_file = fopen("rect_2.bmp", "wb+");
+    if (new_bmp_file == NULL) {
+      perror("new bmp file could not be created");
+      exit(EXIT_FAILURE);
+    }
+
+    printf("sizeof BMPImage -> %lu\n", sizeof(BMPHeader) + bmp_image.header.image_size);
+    //fwrite(&bmp_image, (sizeof(BMPHeader) + bmp_image.header.image_size), 1, new_bmp_file);
 
     //for (u8 i = 0; i < 192; i += 1) {
     //  printf("mydata[%d] -> %#010x\n", i, mydata[i]);
