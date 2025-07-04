@@ -28,24 +28,26 @@ typedef size_t usize;
 // For 24-bit representation, 8 bits (1 byte) for RED, 8 bits for GREEN, and 8
 // bits for BLUE.
 
-// CIEXYZ: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-ciexyz
-typedef struct BMPciexyz BMPciexyz;
-struct BMPciexyz {
+// CIEXYZ:
+// https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-ciexyz
+typedef struct CieXyz CieXyz;
+struct CieXyz {
   u32 ciexyz_x;
   u32 ciexyz_y;
   u32 ciexyz_z;
 };
 
-// CIEXYZTRIPLE: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-ciexyztriple
-typedef struct CiexyzTriple CiexyzTriple;
-struct CiexyzTriple {
-  BMPciexyz ciexyz_red;
-  BMPciexyz ciexyz_green;
-  BMPciexyz ciexyz_blue;
+// CIEXYZTRIPLE:
+// https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-ciexyztriple
+typedef struct CieXyz3 CieXyz3;
+struct CieXyz3 {
+  CieXyz ciexyz_red;
+  CieXyz ciexyz_green;
+  CieXyz ciexyz_blue;
 };
 
-typedef struct BMPHeader BMPHeader;
-struct BMPHeader {
+typedef struct BitmapHeader BitmapHeader;
+struct __attribute__((packed)) BitmapHeader {
   u16 signature; // 0x4d42 or "BM", 0x42 0x4d
   u32 filesize;
   u16 reserved;
@@ -95,17 +97,19 @@ struct BitmapInfoHeaderV3 {
   u32 bi_alpha_mask;
 };
 
-// V4: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapv4header
+// V4:
+// https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapv4header
 typedef struct BitmapInfoHeaderV4 BitmapInfoHeaderV4;
 struct BitmapInfoHeaderV4 {
   u32 bi_cs_type;
-  CiexyzTriple bi_endpoints; // umm what?
+  CieXyz3 bi_endpoints;
   u32 bi_gamma_red;
   u32 bi_gamma_green;
   u32 bi_gamma_blue;
 };
 
-// V5: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapv5header
+// V5:
+// https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapv5header
 typedef struct BitmapInfoHeaderV5 BitmapInfoHeaderV5;
 struct BitmapInfoHeaderV5 {
   u32 bi_intent;
@@ -114,21 +118,21 @@ struct BitmapInfoHeaderV5 {
   u32 bi_reserved;
 };
 
-//typedef struct BMPColorTable BMPColorTable;
-//struct BMPColorTable {
-//  u8 red;
-//  u8 green;
-//  u8 blue;
-//  u8 reversed;
-//};
+// typedef struct BMPColorTable BMPColorTable;
+// struct BMPColorTable {
+//   u8 red;
+//   u8 green;
+//   u8 blue;
+//   u8 reversed;
+// };
 
-typedef struct BMPImage BMPImage;
-struct BMPImage {
-  BMPHeader header;
+typedef struct BitmapImage BitmapImage;
+struct __attribute__((packed)) BitmapImage {
+  BitmapHeader header;
   u8* data;
 };
 
-void print_bmp_image_fields(BMPImage bmp_image)
+void print_bmp_image_fields(BitmapImage bmp_image)
 {
   printf(
       "BMP Image { signature = %#010x, filesize = %#010x, offset = %#010x, "
@@ -142,10 +146,54 @@ void print_bmp_image_fields(BMPImage bmp_image)
   );
 }
 
-BMPImage read_bmp_file(char* filepath)
+void write_bmp_file(
+    char* filepath,
+    u32 filesize,
+    u32 offset,
+    u32 image_width,
+    u32 image_height,
+    u32 image_size,
+    u8* data_buffer
+)
 {
-  BMPImage bmp_image = {0};
-  FILE* file         = fopen(filepath, "rb");
+  BitmapImage bmp_image = {
+      .header =
+          {.signature = 0x4d42,
+           .filesize  = filesize,
+           .reserved  = 0x0,
+           .reserved2 = 0x0,
+           .offset    = offset,
+
+           .dib_header_size        = 0x28,
+           .image_width            = image_width,
+           .image_height           = image_height,
+           .number_of_color_planes = 0x01,
+           .bits_per_pixel         = 0x18,
+           .compression_type       = 0x0,
+           .image_size             = image_size,
+           .xresolution_ppm        = 0x2e23,
+           .yresolution_ppm        = 0x2e23,
+           .number_of_colors       = 0x0,
+           .important_colors       = 0x0},
+
+      .data = data_buffer
+  };
+
+  FILE* bmp_file = fopen(filepath, "wb+");
+
+  if (bmp_file == NULL) {
+    perror("new bmp file could not be created");
+    exit(EXIT_FAILURE);
+  }
+
+  fwrite(&bmp_image.header, sizeof(BitmapHeader), 1, bmp_file);
+  fwrite(bmp_image.data, bmp_image.header.image_size, 1, bmp_file);
+}
+
+BitmapImage read_bmp_file(char* filepath)
+{
+  BitmapImage bmp_image = {0};
+  FILE* file            = fopen(filepath, "rb");
 
   if (file) {
     fseek(file, 0, SEEK_END);
@@ -158,14 +206,14 @@ BMPImage read_bmp_file(char* filepath)
     // https://www.tutorialspoint.com/c_standard_library/c_function_fread.htm
     // https://cplusplus.com/reference/cstdio/fread/
     // FIX: read each section with fread
-    printf("size of BMPImage struct -> %lu\n", sizeof(BMPImage));
+    printf("size of BitmapImage struct -> %lu\n", sizeof(BitmapImage));
 
     usize signature_result =
         fread(&bmp_image.header.signature, sizeof(u16), 1, file);
     if (signature_result != 1)
       fprintf(stderr, "Error reading BMP file signature %s\n", filepath);
     else
-      printf("BMPImage.signature = %#010x\n", bmp_image.header.signature);
+      printf("BitmapImage.signature = %#010x\n", bmp_image.header.signature);
 
     usize filesize_result =
         fread(&bmp_image.header.filesize, sizeof(u32), 1, file);
@@ -173,7 +221,7 @@ BMPImage read_bmp_file(char* filepath)
       fprintf(stderr, "Error reading BMP file size %s\n", filepath);
     else
       printf(
-          "BMPImage.filesize = %#010x or %d\n",
+          "BitmapImage.filesize = %#010x or %d\n",
           bmp_image.header.filesize,
           bmp_image.header.filesize
       );
@@ -207,28 +255,35 @@ BMPImage read_bmp_file(char* filepath)
     fread(&bmp_image.header.number_of_colors, sizeof(u32), 1, file);
     fread(&bmp_image.header.important_colors, sizeof(u32), 1, file);
 
-    //fseek(file, 0, SEEK_SET);
+    // fseek(file, 0, SEEK_SET);
     fseek(file, bmp_image.header.offset, SEEK_SET);
 
-    //printf("file pos -> %ld\n", ftell(file));
-    //u8 first  = 0xb;
-    //u8 second = 0xb;
-    //u8 third  = 0xb;
-    //fread(&first, sizeof(u8), 1, file);
-    //printf("first byte -> %d\n", first);
-    //fread(&second, sizeof(u8), 1, file);
-    //printf("second byte -> %d\n", second);
-    //fread(&third, sizeof(u8), 1, file);
-    //printf("third byte -> %d\n", third);
+    // printf("file pos -> %ld\n", ftell(file));
+    // u8 first  = 0xb;
+    // u8 second = 0xb;
+    // u8 third  = 0xb;
+    // fread(&first, sizeof(u8), 1, file);
+    // printf("first byte -> %d\n", first);
+    // fread(&second, sizeof(u8), 1, file);
+    // printf("second byte -> %d\n", second);
+    // fread(&third, sizeof(u8), 1, file);
+    // printf("third byte -> %d\n", third);
 
-    //u8 mydata[192];
-    //u8* mydata;
+    // u8 mydata[192];
+    // u8* mydata;
 
     // https://man7.org/linux/man-pages/man2/mmap.2.html
 
-    /* addr - hint to the OS kernel to use this address at which the virtual mapping should start in the virtual address space of the process. The value can be specified as NULL to indicate that the kernel can place the virtual mapping anywhere it sees fit. If not NULL, then addr should be a multiple of the page size. */
+    /* addr - hint to the OS kernel to use this address at which the virtual
+     * mapping should start in the virtual address space of the process. The
+     * value can be specified as NULL to indicate that the kernel can place the
+     * virtual mapping anywhere it sees fit. If not NULL, then addr should be a
+     * multiple of the page size. */
     void* addr = NULL;
-    /* length - This argument specifies the length as number of bytes for the mapping. This length should be a multiple of the page size, although the system automatically aligns the length to be multiple of the underlying page size. */
+    /* length - This argument specifies the length as number of bytes for the
+     * mapping. This length should be a multiple of the page size, although the
+     * system automatically aligns the length to be multiple of the underlying
+     * page size. */
     u32 mmap_len = bmp_image.header.image_size;
     /* protection for the mapped memory */
     u32 mmap_prot = PROT_READ | PROT_WRITE;
@@ -249,27 +304,55 @@ BMPImage read_bmp_file(char* filepath)
       printf("pages[%d] -> %#010x\n", i, *(bmp_image.data + i));
     }
 
-    FILE* new_bmp_file = fopen("rect_2.bmp", "wb+");
+    FILE* new_bmp_file = fopen("test.bmp", "wb+");
     if (new_bmp_file == NULL) {
       perror("new bmp file could not be created");
       exit(EXIT_FAILURE);
     }
 
-    printf("sizeof BMPImage -> %lu\n", sizeof(BMPHeader) + bmp_image.header.image_size);
-    //fwrite(&bmp_image, (sizeof(BMPHeader) + bmp_image.header.image_size), 1, new_bmp_file);
+    printf("BitmapImage filesize -> %d\n", bmp_image.header.filesize);
+    printf(
+        "sizeof BitmapImage -> %lu\n",
+        sizeof(BitmapHeader) + bmp_image.header.image_size
+    );
+    // bmp_image.header.filesize = 0x37;
+    // bmp_image.header.offset   = 0x36;
+    // u8 color = 0xff;
+    // fwrite(&bmp_image.header, sizeof(BMPHeader), 1, new_bmp_file);
+    // fwrite(&color, sizeof(u32), 1, new_bmp_file);
 
-    //for (u8 i = 0; i < 192; i += 1) {
-    //  printf("mydata[%d] -> %#010x\n", i, mydata[i]);
-    //}
-    //fread(pages, sizeof(u8*), bmp_image.header.image_size, file);
+    fwrite(&bmp_image.header, sizeof(BitmapHeader), 1, new_bmp_file);
+    fwrite(bmp_image.data, bmp_image.header.image_size, 1, new_bmp_file);
 
-    //printf("0x1  -> %d\n", *(u8*)(pages + sizeof(u8) * 0));
-    //printf("0x2  -> %d\n", *(u8*)(pages + sizeof(u8) * 1));
-    //printf("0x3  -> %d\n", *(u8*)(pages + sizeof(u8) * 2));
-    //printf("0x18 -> %d\n", *(u8*)(pages + (sizeof(u8) * 23)));
-    //printf("mydata -> %d | %d | %d\n", mydata[0], mydata[1], mydata[2]);
+    u8* data = (u8 *)malloc(sizeof(u32));
 
-    // usize result = fread(&bmp_image, sizeof(BMPImage), 1, file);
+    // Green pixel
+    data[0] = 0x14;  // Red
+    data[1] = 0xff;  // Blue
+    data[2] = 0x0;   // Green
+
+   write_bmp_file(
+      "test_file.bmp",
+      bmp_image.header.filesize,
+      bmp_image.header.offset,
+      bmp_image.header.image_width,
+      bmp_image.header.image_height,
+      bmp_image.header.image_size,
+      data
+    );
+
+    // for (u8 i = 0; i < 192; i += 1) {
+    //   printf("mydata[%d] -> %#010x\n", i, mydata[i]);
+    // }
+    // fread(pages, sizeof(u8*), bmp_image.header.image_size, file);
+
+    // printf("0x1  -> %d\n", *(u8*)(pages + sizeof(u8) * 0));
+    // printf("0x2  -> %d\n", *(u8*)(pages + sizeof(u8) * 1));
+    // printf("0x3  -> %d\n", *(u8*)(pages + sizeof(u8) * 2));
+    // printf("0x18 -> %d\n", *(u8*)(pages + (sizeof(u8) * 23)));
+    // printf("mydata -> %d | %d | %d\n", mydata[0], mydata[1], mydata[2]);
+
+    // usize result = fread(&bmp_image, sizeof(BitmapImage), 1, file);
     // if (result != 1) fprintf(stderr, "Error reading BMP file %s\n",
     // filepath); else print_bmp_image_fields(bmp_image);
 
@@ -695,7 +778,7 @@ int main(void)
 {
   syscall(SYS_write, 1, "I like pancakes\n", 17);
 
-  BMPImage bmp_image = read_bmp_file("rect.bmp");
+  BitmapImage bmp_image = read_bmp_file("blue_pixel_24.bmp");
   (void)bmp_image;
   // printf("bmp_image -> %d", (int*)bmp_image);
 
@@ -784,7 +867,7 @@ int main(void)
   // XFlush(mainDisplay);
 
   ////XDrawArc(mainDisplay, mainWindow, gc, 50-(30/2), 100-(30/2), 30, 30, 0,
-  ///360*64);
+  /// 360*64);
   // XDrawLine(mainDisplay, mainWindow, gc, 10, 60, 180, 20);
   // XFlush(mainDisplay);
   // char* mytext = "This is some text";
@@ -808,8 +891,8 @@ int main(void)
 
         // if (generalEvent.xexpose.count) break;
         ////XSetForeground(mainDisplay, gc, WhitePixel(mainDisplay,
-        ///screen_num)); /XDrawString(mainDisplay, mainWindow, gc, 10, 10,
-        ///mytext, strlen(mytext));
+        /// screen_num)); /XDrawString(mainDisplay, mainWindow, gc, 10, 10,
+        /// mytext, strlen(mytext));
         // XFillRectangle(mainDisplay, mainWindow, gc, 0, 100, 50, 50);
         break;
       }
