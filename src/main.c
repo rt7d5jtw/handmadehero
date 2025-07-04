@@ -272,6 +272,7 @@ BitmapImage read_bmp_file(char* filepath)
     // u8 mydata[192];
     // u8* mydata;
 
+#if defined(__linux__)
     // https://man7.org/linux/man-pages/man2/mmap.2.html
 
     /* addr - hint to the OS kernel to use this address at which the virtual
@@ -296,6 +297,17 @@ BitmapImage read_bmp_file(char* filepath)
       perror("mmap");
       exit(EXIT_FAILURE);
     }
+#endif
+
+#if defined(_WIN32)
+    // VirtualALloc https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc
+    bmp_image.data = (u8*)VirtualAlloc(0, bmp_image.header.image_size, MEM_COMMIT, PAGE_READWRITE);
+
+    if (bmp_image.data == NULL) {
+      GetLastError();
+      exit(-1)
+    }
+#endif
 
     fread(bmp_image.data, sizeof(u8), bmp_image.header.image_size, file);
 
