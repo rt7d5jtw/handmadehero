@@ -58,6 +58,7 @@ endif()
 #target_link_libraries(${PROJECT_NAME} user32.lib gdi32.lib)
 
 # set variable for the C preprocessor to detect the operatong system
+add_compile_definitions("DEBUG=$<CONFIG:Debug>")
 #if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 #  target_compile_definitions(ostest PUBLIC "LINUX_OS")
 #endif()

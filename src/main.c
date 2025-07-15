@@ -4,11 +4,28 @@
 
 #if defined(_WIN32) // Windows code {{{
 
+#define _CRT_SECURE_NO_WARNINGS
+
+#include "base.h"
+
 #  ifndef UNICODE
 #    define UNICODE
 #  endif
 
 #  include <windows.h>
+
+#ifdef DEBUG
+
+#  define MACRO_STMT(__stmt__) do { __stmt__ } while (0)
+#  define __TO_STR(str) #str
+
+#  define __win32_debug_print(argname, argvalue) MACRO_STMT( \
+    char dbg_msg[255] = {0};                                 \
+    sprintf(dbg_msg, __TO_STR(argname)" -> %d\n", argvalue); \
+    OutputDebugStringA(dbg_msg);                             \
+  )
+
+#endif
 
 #  define WINDOW_WIDTH  1480
 #  define WINDOW_HEIGHT 860
@@ -71,9 +88,17 @@ void draw_random_gradient(
   }
 }
 
-void draw_pixel(u32 x, u32 y, u32 color) {
+typedef wchar_t wchar;
+
+void draw_pixel(int x, int y, u32 color) {
+#ifdef DEBUG
+  __win32_debug_print(x, x);
+  __win32_debug_print(y, y);
+#endif
+
   u32* pixel = frame.pixels;
-  pixel += y * frame.width + x;
+  // width * y + x
+  pixel += y*frame.width + x;
   *pixel = color;
 }
 
@@ -305,7 +330,7 @@ win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
     // Set the size of the pixel array and finish setting up GDI bitmap
     case WM_SIZE: {
       frameBitmapInfo.bmiHeader.biWidth  = LOWORD(lParam);
-      frameBitmapInfo.bmiHeader.biHeight = HIWORD(lParam);
+      frameBitmapInfo.bmiHeader.biHeight = -HIWORD(lParam); // DIBs are based in a coordinate system that is upside down relative to Windows, source: https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
 
       // Delete already existing bitmap
       if (frameBitmap)
