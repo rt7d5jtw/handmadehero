@@ -19,6 +19,13 @@
 #  define MACRO_STMT(__stmt__) do { __stmt__ } while (0)
 #  define __TO_STR(str) #str
 
+/*
+  TCHAR         - _stprintf - OutputDebugString
+  CHAR/char     - sprintf   - OutputDebugStringA
+  WCHAR/wchar_t - swprintf  - OutputDebugStringW
+*/
+
+// debug print macro for win32 debugging
 #  define __win32_debug_print(argname, argvalue) MACRO_STMT( \
     char dbg_msg[255] = {0};                                 \
     sprintf(dbg_msg, __TO_STR(argname)" -> %d\n", argvalue); \
