@@ -2,7 +2,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <sys/mman.h>
+#if defined(__linux__)
+#  include <sys/mman.h>
+#endif
+#if defined(_WIN32)
+#  include <windows.h>
+#endif
+
+// packed structs macro
+// --------------------
+// https://stackoverflow.com/a/3312896
+// GCC  __attribute__((packed)) https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Packed-Structures.html
+// MSVC pragma pack             https://learn.microsoft.com/en-us/cpp/preprocessor/pack?view=msvc-170
+#ifdef __GNUC__ || __clang__
+#  define PACK( __Declaration__ ) __Declaration__ __attribute__((packed))
+#endif
+#ifdef _MSC_VER
+#  define PACK( __Declaration__ ) __pragma( pack(push, 1) ) __Declaration__ __pragma( pack(pop))
+#endif
 
 #define internal static
 #define local    static
@@ -47,7 +64,7 @@ struct CieXyz3 {
 };
 
 typedef struct BitmapHeader BitmapHeader;
-struct __attribute__((packed)) BitmapHeader {
+PACK(struct BitmapHeader {
   u16 signature; // 0x4d42 or "BM", 0x42 0x4d
   u32 filesize;
   u16 reserved;
@@ -65,7 +82,7 @@ struct __attribute__((packed)) BitmapHeader {
   s32 yresolution_ppm; // pixels per meter
   u32 number_of_colors;
   u32 important_colors;
-};
+});
 
 typedef struct BitmapInfoHeader BitmapInfoHeader;
 struct BitmapInfoHeader {
@@ -127,10 +144,10 @@ struct BitmapInfoHeaderV5 {
 // };
 
 typedef struct BitmapImage BitmapImage;
-struct __attribute__((packed)) BitmapImage {
+PACK(struct BitmapImage {
   BitmapHeader header;
   u8* data;
-};
+});
 
 void print_bmp_image_fields(BitmapImage bmp_image)
 {
@@ -305,7 +322,7 @@ BitmapImage read_bmp_file(char* filepath)
 
     if (bmp_image.data == NULL) {
       GetLastError();
-      exit(-1)
+      exit(-1);
     }
 #endif
 
@@ -407,6 +424,8 @@ static BITMAPINFO frameBitmapInfo;
 static HBITMAP frameBitmap    = 0;
 static HDC frameDeviceContext = 0;
 
+static int client_width;
+
 u32 bytes_per_pixel = 4;
 
 void draw_random_gradient(
@@ -442,6 +461,12 @@ void draw_random_gradient(
 
     row += pitch;
   }
+}
+
+void draw_pixel(u32 x, u32 y, u32 color) {
+  u32* pixel = frame.pixels;
+  pixel += y * frame.width + x;
+  *pixel = color;
 }
 
 /// }}}
@@ -498,8 +523,8 @@ int WINAPI WinMain(
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebox
     MessageBox(
         windowHandle,
-        "Window Registration Failed!",
-        "Error!",
+        L"Window Registration Failed!",
+        L"Error!",
         MB_ICONEXCLAMATION | MB_OK
     );
 
@@ -555,10 +580,10 @@ int WINAPI WinMain(
 
   if (windowHandle == NULL) {
     MessageBox(
-        windowHandle,
-        "Window Creation Failed!",
-        "Error!",
-        MB_ICONEXCLAMATION | MB_OK
+      windowHandle,
+      L"Window Creation Failed!",
+      L"Error!",
+      MB_ICONEXCLAMATION | MB_OK
     );
     return GetLastError();
   }
@@ -566,6 +591,10 @@ int WINAPI WinMain(
   // ShowWindow
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
   ShowWindow(windowHandle, nCmdShow);
+
+  RECT rect;
+  GetClientRect(windowHandle, &rect);
+  client_width = rect.right - rect.left;
 
   u32 x_offset = 0;
   u32 y_offset = 0;
@@ -583,10 +612,8 @@ int WINAPI WinMain(
 
     // GDI Drawing logic {{{
 
-    draw_random_gradient(
-        frame.pixels, frame.width, frame.height, x_offset, y_offset
-    );
-    ++x_offset;
+    //draw_random_gradient(frame.pixels, frame.width, frame.height, x_offset, y_offset);
+    //++x_offset;
 
     /*
      InvalidateRect marks a section of the window invalid and
@@ -627,6 +654,15 @@ win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_QUIT:
     case WM_DESTROY: {
       running = false;
+    } break;
+    case WM_MOUSEMOVE: {
+      if (wParam == MK_LBUTTON) {
+        int x = GetlParamX(lParam);
+        int y = GetlParamY(lParam);
+        u32 color = 0xffffff;
+        draw_pixel(x, y, color);
+      }
+
     } break;
     // GDI Drawing logic {{{
     case WM_PAINT: {
