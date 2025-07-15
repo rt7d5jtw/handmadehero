@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(handmade_hero VERSION 0.1 LANGUAGES C)
 
+# For clangd
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 add_executable("${PROJECT_NAME}" src/main.c)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -64,6 +67,3 @@ endif()
 #if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 #  target_compile_definitions(ostest PUBLIC "WINDOWS_OS")
 #endif()
-
-# For clangd
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

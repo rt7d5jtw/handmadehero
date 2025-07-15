@@ -22,3 +22,6 @@ Linux:
   1. `$ cmake . -B build -G "Unix Makefiles"`
   2. `$ make -C build VERBOSE=1`
   3. `$ ./build/handmade_hero`
+
+
+If you dont have compile_commands.json symlinked: `ln -s build/compile_commands.json .`
