@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "base.h"
 
 #if defined(__linux__)
 #  include <sys/mman.h>
@@ -7,8 +8,6 @@
 #if defined(_WIN32)
 #  include <windows.h>
 #endif
-
-#include "base.h"
 
 // source: https://engineering.purdue.edu/ece264/16au/hw/HW13
 // source:

@@ -1,6 +1,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#pragma once
+#ifndef __BASELIB__
+#define __BASELIB__
+#endif
+
 #define internal static
 #define local    static
 #define global   static

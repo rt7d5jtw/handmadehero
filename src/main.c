@@ -1,12 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include "base.h"
 
 #if defined(_WIN32) // Windows code {{{
 
 #define _CRT_SECURE_NO_WARNINGS
-
-#include "base.h"
 
 #  ifndef UNICODE
 #    define UNICODE
@@ -46,19 +45,20 @@
 */
 
 // START OF GDI Drawing declarations {{{
-struct {
+
+typedef struct Win32_OffscreenBuffer;
+struct Win32_OffscreenBuffer {
+  BITMAPINFO info;
+  void* pixels; // pixel array for the bitmap
   u32 width;
   u32 height;
-  u32* pixels; // pixel array for the bitmap
-} frame = {0};
+  u32 bytes_per_pixel;
+  HBITMAP bitmap_handle;
+  HDC frame_device_context;
+};
 
-static BITMAPINFO frameBitmapInfo;
-static HBITMAP frameBitmap    = 0;
-static HDC frameDeviceContext = 0;
-
+struct Win32_OffscreenBuffer win32_offscreen_buffer = {.bytes_per_pixel = 4};
 static int client_width;
-
-u32 bytes_per_pixel = 4;
 
 void draw_random_gradient(
     u32* bitmap_memory,
@@ -68,7 +68,7 @@ void draw_random_gradient(
     u32 y_offset
 )
 {
-  u32 pitch = bitmap_width * bytes_per_pixel;
+  u32 pitch = bitmap_width * win32_offscreen_buffer.bytes_per_pixel;
   u8* row   = (u8*)bitmap_memory;
 
   for (u32 y = 0; y < bitmap_height; ++y) {
@@ -103,9 +103,8 @@ void draw_pixel(int x, int y, u32 color) {
   __win32_debug_print(y, y);
 #endif
 
-  u32* pixel = frame.pixels;
-  // width * y + x
-  pixel += y*frame.width + x;
+  u32* pixel = win32_offscreen_buffer.pixels;
+  pixel += y * win32_offscreen_buffer.width + x;
   *pixel = color;
 }
 
@@ -176,17 +175,17 @@ int WINAPI WinMain(
   // Dimensions and color information for the bitmap
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfo
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfoheader
-  frameBitmapInfo.bmiHeader.biSize = sizeof(
-      frameBitmapInfo.bmiHeader
+  win32_offscreen_buffer.info.bmiHeader.biSize = sizeof(
+      win32_offscreen_buffer.info.bmiHeader
   ); // the number of bytes required by the structure
-  frameBitmapInfo.bmiHeader.biPlanes =
+  win32_offscreen_buffer.info.bmiHeader.biPlanes =
       1; // the number of planes for the target device, must be set to 1
-  frameBitmapInfo.bmiHeader.biBitCount =
+  win32_offscreen_buffer.info.bmiHeader.biBitCount =
       32; // the number of of bits per pixel (bpp)
-  frameBitmapInfo.bmiHeader.biCompression = BI_RGB; // uncompressed RGB format
+  win32_offscreen_buffer.info.bmiHeader.biCompression = BI_RGB; // uncompressed RGB format
 
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createcompatibledc
-  frameDeviceContext = CreateCompatibleDC(0);
+  win32_offscreen_buffer.frame_device_context = CreateCompatibleDC(0);
 
   /// }}}
 
@@ -252,7 +251,7 @@ int WINAPI WinMain(
 
     // GDI Drawing logic {{{
 
-    //draw_random_gradient(frame.pixels, frame.width, frame.height, x_offset, y_offset);
+    //draw_random_gradient(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset, y_offset);
     //++x_offset;
 
     /*
@@ -330,7 +329,7 @@ win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
           paint.rcPaint.top,
           paint.rcPaint.right - paint.rcPaint.left,
           paint.rcPaint.bottom - paint.rcPaint.top,
-          frameDeviceContext,
+          win32_offscreen_buffer.frame_device_context,
           paint.rcPaint.left,
           paint.rcPaint.top,
           SRCCOPY
@@ -342,24 +341,24 @@ win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
     } break;
     // Set the size of the pixel array and finish setting up GDI bitmap
     case WM_SIZE: {
-      frameBitmapInfo.bmiHeader.biWidth  = LOWORD(lParam);
-      frameBitmapInfo.bmiHeader.biHeight = -HIWORD(lParam); // DIBs are based in a coordinate system that is upside down relative to Windows, source: https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
+      win32_offscreen_buffer.info.bmiHeader.biWidth  = LOWORD(lParam);
+      win32_offscreen_buffer.info.bmiHeader.biHeight = -HIWORD(lParam); // DIBs are based in a coordinate system that is upside down relative to Windows, source: https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
 
       // Delete already existing bitmap
-      if (frameBitmap)
-        DeleteObject(frameBitmap);
+      if (win32_offscreen_buffer.bitmap_handle)
+        DeleteObject(win32_offscreen_buffer.bitmap_handle);
 
       // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
       // Create a bitmap
-      frameBitmap = CreateDIBSection(
+      win32_offscreen_buffer.bitmap_handle = CreateDIBSection(
           NULL,             /* hdc      - Handle to a device context */
-          &frameBitmapInfo, /* pbmi     - Pointer to bitmap info */
+          &win32_offscreen_buffer.info, /* pbmi     - Pointer to bitmap info */
           DIB_RGB_COLORS, /* usage    - type of data contained in the bmiColors
                              array member of the BITMAPINFO structure pointed to
                              by pbmi */
           (
               void**
-          )&frame.pixels, /* ppvBits  - a pointer to a variable that receives a
+          )&win32_offscreen_buffer.pixels, /* ppvBits  - a pointer to a variable that receives a
                              pointer ot the location of the DIB bit values */
           0, /* hSection - a handle to a file-mapping object that hte function
                 will use to create the DIB. */
@@ -370,10 +369,10 @@ win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
 
       // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject
       // point device context to the bitmap
-      SelectObject(frameDeviceContext, frameBitmap);
+      SelectObject(win32_offscreen_buffer.frame_device_context, win32_offscreen_buffer.bitmap_handle);
 
-      frame.width  = LOWORD(lParam);
-      frame.height = HIWORD(lParam);
+      win32_offscreen_buffer.width  = LOWORD(lParam);
+      win32_offscreen_buffer.height = HIWORD(lParam);
     } break;
     /// }}}
     default: {
