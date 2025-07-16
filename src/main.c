@@ -343,6 +343,7 @@ win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
     } break;
     // Set the size of the pixel array and finish setting up GDI bitmap
     case WM_SIZE: {
+      // NOTE: When the biHeight field is negative, this is the clue to Windows to treat this bitmap as top-down, instead of bottom-up, meaning that the first three bytes of the image are the color for the top left pixel in the bitmap, not the bottom left.
       win32_offscreen_buffer.info.bmiHeader.biWidth  = LOWORD(lParam);
       win32_offscreen_buffer.info.bmiHeader.biHeight = -HIWORD(lParam); // DIBs are based in a coordinate system that is upside down relative to Windows, source: https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
 
@@ -410,7 +411,7 @@ global bool running = true;
 #  define RED        0xcd1c18
 #  define WHITE      0xffffff
 
-void drawToBuffer(
+void draw_to_buffer(
     u64 yColor,
     u64 xColor,
     XImage* image,
@@ -585,7 +586,7 @@ int main(void)
       case Expose: {
         printf("X11 Expose Event: %d\n", generalEvent.xexpose.type);
 
-        drawToBuffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
+        draw_to_buffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
 
         // if (generalEvent.xexpose.count) break;
         ////XSetForeground(mainDisplay, gc, WhitePixel(mainDisplay,
@@ -658,18 +659,18 @@ int main(void)
           case XK_r: {
             XFlush(mainDisplay);
             XSync(mainDisplay, 1);
-            drawToBuffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
+            draw_to_buffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
             break;
           }
           case XK_a: {
             // printf("\"a\" pressed\n");
             XFlush(mainDisplay);
             XSync(mainDisplay, 1);
-            drawToBuffer(BLUE, BLUE, image, gc, mainWindow, mainDisplay);
+            draw_to_buffer(BLUE, BLUE, image, gc, mainWindow, mainDisplay);
             break;
           }
           case XK_b: {
-            drawToBuffer(RED, RED, image, gc, mainWindow, mainDisplay);
+            draw_to_buffer(RED, RED, image, gc, mainWindow, mainDisplay);
             break;
           }
           case XK_q: {
