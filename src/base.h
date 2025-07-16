@@ -1,3 +1,5 @@
+/* vi: foldmethod=marker
+ */
 #include <stdint.h>
 #include <stdlib.h>
 
