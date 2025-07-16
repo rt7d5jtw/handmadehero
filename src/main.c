@@ -25,7 +25,7 @@
   WCHAR/wchar_t - swprintf  - OutputDebugStringW
 */
 
-// debug print macro for win32 debugging
+// debug print macro for win32
 #  define __win32_debug_print(argname, argvalue) MACRO_STMT( \
     char dbg_msg[255] = {0};                                 \
     sprintf(dbg_msg, __TO_STR(argname)" -> %d\n", argvalue); \
@@ -296,6 +296,12 @@ win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_QUIT:
     case WM_DESTROY: {
       running = false;
+    } break;
+    case WM_LBUTTONUP: {
+        int x = GetlParamX(lParam);
+        int y = GetlParamY(lParam);
+        u32 color = 0xffffff;
+        draw_pixel(x, y, color);
     } break;
     case WM_MOUSEMOVE: {
       if (wParam == MK_LBUTTON) {
