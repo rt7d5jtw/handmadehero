@@ -146,7 +146,7 @@ int WINAPI WinMain(
   static MSG msg    = {0};
 
   windowClass.cbSize        = sizeof(WNDCLASSEX);
-  windowClass.style         = 0;
+  windowClass.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
   windowClass.lpszClassName = window_class_name;
   windowClass.lpfnWndProc =
       win32WndProc; // Long Pointer to the Windows Procedure function
