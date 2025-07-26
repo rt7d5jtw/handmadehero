@@ -427,6 +427,8 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
     } break;
     // Set the size of the pixel array and finish setting up GDI bitmap
     case WM_SIZE: {
+      // NOTE: When the biHeight field is negative, this is the clue to Windows to treat this bitmap as top-down, instead of bottom-up, meaning that the first three bytes of the image are the color for the top left pixel in the bitmap, not the bottom left.
+
       //RECT client_rect;
       //GetClientRect(window_handle, &client_rect);
       //int width   = client_rect.right - client_rect.left;
