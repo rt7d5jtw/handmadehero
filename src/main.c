@@ -1,11 +1,12 @@
+#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_DEPRECATE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include "base.h"
 
 #if defined(_WIN32) // Windows code {{{
-
-#define _CRT_SECURE_NO_WARNINGS
 
 #  ifndef UNICODE
 #    define UNICODE
@@ -46,12 +47,13 @@
 
 // START OF GDI Drawing declarations {{{
 
-typedef struct Win32_OffscreenBuffer;
+typedef struct Win32_OffscreenBuffer Win32_OffscreenBuffer;
 struct Win32_OffscreenBuffer {
   BITMAPINFO info;
   void* pixels; // pixel array for the bitmap
   u32 width;
   u32 height;
+  u32 pitch;
   u32 bytes_per_pixel;
   HBITMAP bitmap_handle;
   HDC frame_device_context;
@@ -91,7 +93,7 @@ void draw_random_gradient(
       ++pixel;
     }
 
-    row += pitch;
+    row += pitch;//win32_offscreen_buffer.pitch;
   }
 }
 
@@ -106,6 +108,106 @@ void draw_pixel(int x, int y, u32 color) {
   u32* pixel = win32_offscreen_buffer.pixels;
   pixel += y * win32_offscreen_buffer.width + x;
   *pixel = color;
+}
+
+internal void win32_resize_dib_section(Win32_OffscreenBuffer win32_offscreen_buffer, int width, int height)
+{
+  if (win32_offscreen_buffer.pixels) { VirtualFree(win32_offscreen_buffer.pixels, 0, MEM_RELEASE); }
+
+  win32_offscreen_buffer.width = width;
+  win32_offscreen_buffer.height = height;
+  win32_offscreen_buffer.bytes_per_pixel = 4;
+
+  win32_offscreen_buffer.info.bmiHeader.biSize = sizeof(win32_offscreen_buffer.info.bmiHeader);
+  win32_offscreen_buffer.info.bmiHeader.biWidth = win32_offscreen_buffer.width;
+  win32_offscreen_buffer.info.bmiHeader.biHeight = -cast(s32)(win32_offscreen_buffer.height);
+  win32_offscreen_buffer.info.bmiHeader.biPlanes = 1;
+  win32_offscreen_buffer.info.bmiHeader.biBitCount = 32;
+  win32_offscreen_buffer.info.bmiHeader.biCompression = BI_RGB;
+
+  int bitmap_memory_size = win32_offscreen_buffer.bytes_per_pixel * (win32_offscreen_buffer.width * win32_offscreen_buffer.height);
+
+  win32_offscreen_buffer.pixels = VirtualAlloc(0, bitmap_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+}
+
+internal void win32_resize_bitmap(Win32_OffscreenBuffer* win32_offscreen_buffer, LPARAM lParam)
+{
+  win32_offscreen_buffer->info.bmiHeader.biWidth  = LOWORD(lParam);
+  win32_offscreen_buffer->info.bmiHeader.biHeight = -HIWORD(lParam); // DIBs are based in a coordinate system that is upside down relative to Windows, source: https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
+
+  // Delete already existing bitmap
+  if (win32_offscreen_buffer->bitmap_handle)
+    DeleteObject(win32_offscreen_buffer->bitmap_handle);
+
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
+  // Create a bitmap
+
+  // hdc      - Handle to a device context.
+  // pbmi     - Pointer to bitmap info.
+  // usage    - type of data contained in the bmiColors array member of the BITMAPINFO structure pointed to by pbmi.
+  // ppvBits  - a pointer to a variable that receives a pointer ot the location of the DIB bit values.
+  // hSection - a handle to a file-mapping object that hte function will use to create the DIB.
+  // offset   - the offset form the beginning of the file-mapping object referenced by hSection where storage for the bitmap bit values is to begin.
+  win32_offscreen_buffer->bitmap_handle = CreateDIBSection(
+      NULL,
+      &win32_offscreen_buffer->info,
+      DIB_RGB_COLORS,
+      (
+          void**
+      )&win32_offscreen_buffer->pixels,
+      0,
+      0
+  );
+
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject
+  // point device context to the bitmap
+  SelectObject(win32_offscreen_buffer->frame_device_context, win32_offscreen_buffer->bitmap_handle);
+
+  win32_offscreen_buffer->width  = LOWORD(lParam);
+  win32_offscreen_buffer->height = HIWORD(lParam);
+}
+
+internal void win32_paint_bitmap(HWND window_handle, PAINTSTRUCT paint, HDC device_context)
+{
+  device_context = BeginPaint(
+      window_handle, &paint
+  ); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
+
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
+  // Painting function to copy the pixel array over to the window in the
+  // specified rectangle
+  BitBlt(
+      device_context,
+      paint.rcPaint.left,
+      paint.rcPaint.top,
+      paint.rcPaint.right - paint.rcPaint.left,
+      paint.rcPaint.bottom - paint.rcPaint.top,
+      win32_offscreen_buffer.frame_device_context,
+      paint.rcPaint.left,
+      paint.rcPaint.top,
+      SRCCOPY
+  );
+
+  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
+  EndPaint(
+      window_handle, &paint
+  );
+}
+
+
+internal void win32_display_buffer_in_window(Win32_OffscreenBuffer* buffer, HDC device_context, RECT client_rect)
+{
+  int width   = client_rect.right - client_rect.left;
+  int height  = client_rect.bottom - client_rect.top;
+
+  StretchDIBits(device_context,
+                0, 0, width, height,
+                0, 0, buffer->width, buffer->height,
+                buffer->pixels,
+                &buffer->info,
+                DIB_RGB_COLORS,
+                SRCCOPY
+  );
 }
 
 /// }}}
@@ -128,6 +230,9 @@ int WINAPI WinMain(
     int nCmdShow
 )
 {
+  (void)pCmdLine;
+  (void)hPrevInstance;
+
   // WNDCLASS
   // https://learn.microsoft.com/en-us/previous-versions/ms942860(v=msdn.10)
   // WNDCLASSA
@@ -193,10 +298,10 @@ int WINAPI WinMain(
   DWORD extended_window_style = WS_EX_CLIENTEDGE;
   LPCWSTR window_name         = L"The title of my window";
   DWORD window_style          = WS_OVERLAPPEDWINDOW;
-  u32 window_x       = CW_USEDEFAULT; // horizontal position of the window
-  u32 window_y       = CW_USEDEFAULT; // vertical position of the window
-  u32 window_width   = WINDOW_WIDTH;
-  u32 window_height  = WINDOW_HEIGHT;
+  int window_x       = CW_USEDEFAULT; // horizontal position of the window
+  int window_y       = CW_USEDEFAULT; // vertical position of the window
+  int window_width   = WINDOW_WIDTH;
+  int window_height  = WINDOW_HEIGHT;
   HWND window_parent = NULL;
   HMENU window_menu  = NULL;
   LPVOID lp_param    = NULL;
@@ -215,7 +320,7 @@ int WINAPI WinMain(
       window_menu,
       hInstance,
       lp_param
-  );
+g );
 
   if (windowHandle == NULL) {
     MessageBox(
@@ -251,8 +356,8 @@ int WINAPI WinMain(
 
     // GDI Drawing logic {{{
 
-    //draw_random_gradient(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset, y_offset);
-    //++x_offset;
+    draw_random_gradient(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset, y_offset);
+    ++x_offset;
 
     /*
      InvalidateRect marks a section of the window invalid and
@@ -280,7 +385,7 @@ int WINAPI WinMain(
  * Windows entrypoint
  */
 LRESULT CALLBACK
-win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
+win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   LRESULT result = 0;
   switch (msg) {
@@ -288,7 +393,7 @@ win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
       switch (wParam) {
         // Close window from 'Q'
         case 'Q': {
-          DestroyWindow(windowHandle);
+          DestroyWindow(window_handle);
         }
       }
     } break;
@@ -296,87 +401,41 @@ win32WndProc(HWND windowHandle, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY: {
       running = false;
     } break;
-    case WM_LBUTTONUP: {
-        int x = GetlParamX(lParam);
-        int y = GetlParamY(lParam);
-        u32 color = 0xffffff;
-        draw_pixel(x, y, color);
-    } break;
-    case WM_MOUSEMOVE: {
-      if (wParam == MK_LBUTTON) {
-        int x = GetlParamX(lParam);
-        int y = GetlParamY(lParam);
-        u32 color = 0xffffff;
-        draw_pixel(x, y, color);
-      }
+    //case WM_LBUTTONUP: {
+    //    int x = GetlParamX(lParam);
+    //    int y = GetlParamY(lParam);
+    //    u32 color = 0xffffff;
+    //    draw_pixel(x, y, color);
+    //} break;
+    //case WM_MOUSEMOVE: {
+    //  if (wParam == MK_LBUTTON) {
+    //    int x = GetlParamX(lParam);
+    //    int y = GetlParamY(lParam);
+    //    u32 color = 0xffffff;
+    //    draw_pixel(x, y, color);
+    //  }
 
-    } break;
+    //} break;
     // GDI Drawing logic {{{
     case WM_PAINT: {
       static PAINTSTRUCT paint;
-      static HDC deviceContext;
-
-      deviceContext = BeginPaint(
-          windowHandle, &paint
-      ); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
-
-      // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
-      // Painting function to copy the pixel array over to the window in the
-      // specified rectangle
-      BitBlt(
-          deviceContext,
-          paint.rcPaint.left,
-          paint.rcPaint.top,
-          paint.rcPaint.right - paint.rcPaint.left,
-          paint.rcPaint.bottom - paint.rcPaint.top,
-          win32_offscreen_buffer.frame_device_context,
-          paint.rcPaint.left,
-          paint.rcPaint.top,
-          SRCCOPY
-      );
-
-      EndPaint(
-          windowHandle, &paint
-      ); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
+      static HDC device_context;
+      win32_paint_bitmap(window_handle, paint, device_context);
     } break;
     // Set the size of the pixel array and finish setting up GDI bitmap
     case WM_SIZE: {
-      win32_offscreen_buffer.info.bmiHeader.biWidth  = LOWORD(lParam);
-      win32_offscreen_buffer.info.bmiHeader.biHeight = -HIWORD(lParam); // DIBs are based in a coordinate system that is upside down relative to Windows, source: https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
 
-      // Delete already existing bitmap
-      if (win32_offscreen_buffer.bitmap_handle)
-        DeleteObject(win32_offscreen_buffer.bitmap_handle);
+      //RECT client_rect;
+      //GetClientRect(window_handle, &client_rect);
+      //int width   = client_rect.right - client_rect.left;
+      //int height  = client_rect.bottom - client_rect.top;
+      //win32_resize_dib_section(win32_offscreen_buffer, width, height);
 
-      // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
-      // Create a bitmap
-      win32_offscreen_buffer.bitmap_handle = CreateDIBSection(
-          NULL,             /* hdc      - Handle to a device context */
-          &win32_offscreen_buffer.info, /* pbmi     - Pointer to bitmap info */
-          DIB_RGB_COLORS, /* usage    - type of data contained in the bmiColors
-                             array member of the BITMAPINFO structure pointed to
-                             by pbmi */
-          (
-              void**
-          )&win32_offscreen_buffer.pixels, /* ppvBits  - a pointer to a variable that receives a
-                             pointer ot the location of the DIB bit values */
-          0, /* hSection - a handle to a file-mapping object that hte function
-                will use to create the DIB. */
-          0  /* offset   - the offset form the beginning of the file-mapping
-                object referenced by hSection where storage for the bitmap bit
-                values is to begin */
-      );
-
-      // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject
-      // point device context to the bitmap
-      SelectObject(win32_offscreen_buffer.frame_device_context, win32_offscreen_buffer.bitmap_handle);
-
-      win32_offscreen_buffer.width  = LOWORD(lParam);
-      win32_offscreen_buffer.height = HIWORD(lParam);
-    } break;
+      win32_resize_bitmap(&win32_offscreen_buffer, lParam);
+   } break;
     /// }}}
     default: {
-      result = DefWindowProc(windowHandle, msg, wParam, lParam);
+      result = DefWindowProc(window_handle, msg, wParam, lParam);
     }
   }
   return result;
