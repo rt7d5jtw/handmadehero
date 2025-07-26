@@ -1,3 +1,6 @@
+/* vi: foldmethod=marker
+ */
+
 #define _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_DEPRECATE
 
@@ -320,7 +323,7 @@ int WINAPI WinMain(
       window_menu,
       hInstance,
       lp_param
-g );
+  );
 
   if (windowHandle == NULL) {
     MessageBox(
@@ -424,7 +427,6 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
     } break;
     // Set the size of the pixel array and finish setting up GDI bitmap
     case WM_SIZE: {
-
       //RECT client_rect;
       //GetClientRect(window_handle, &client_rect);
       //int width   = client_rect.right - client_rect.left;
@@ -467,7 +469,7 @@ global bool running = true;
 #  define RED        0xcd1c18
 #  define WHITE      0xffffff
 
-void drawToBuffer(
+void draw_to_buffer(
     u64 yColor,
     u64 xColor,
     XImage* image,
@@ -642,7 +644,7 @@ int main(void)
       case Expose: {
         printf("X11 Expose Event: %d\n", generalEvent.xexpose.type);
 
-        drawToBuffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
+        draw_to_buffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
 
         // if (generalEvent.xexpose.count) break;
         ////XSetForeground(mainDisplay, gc, WhitePixel(mainDisplay,
@@ -715,18 +717,18 @@ int main(void)
           case XK_r: {
             XFlush(mainDisplay);
             XSync(mainDisplay, 1);
-            drawToBuffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
+            draw_to_buffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
             break;
           }
           case XK_a: {
             // printf("\"a\" pressed\n");
             XFlush(mainDisplay);
             XSync(mainDisplay, 1);
-            drawToBuffer(BLUE, BLUE, image, gc, mainWindow, mainDisplay);
+            draw_to_buffer(BLUE, BLUE, image, gc, mainWindow, mainDisplay);
             break;
           }
           case XK_b: {
-            drawToBuffer(RED, RED, image, gc, mainWindow, mainDisplay);
+            draw_to_buffer(RED, RED, image, gc, mainWindow, mainDisplay);
             break;
           }
           case XK_q: {

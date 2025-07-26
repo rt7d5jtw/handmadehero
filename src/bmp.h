@@ -1,3 +1,5 @@
+/* vi: foldmethod=marker
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include "base.h"
@@ -125,7 +127,9 @@ PACK(struct BitmapImage {
 
 // BMP functions {{{
 
+/* debug print */
 void print_bmp_image_fields(BitmapImage);
+/* write 24 bit bmp file without color space information */
 void write_bmp_file(char*, u32, u32, u32, u32, u32, u8*);
 BitmapImage read_bmp_file(char* filepath);
 
@@ -335,12 +339,13 @@ BitmapImage read_bmp_file(char* filepath)
 
     u8* data = (u8 *)malloc(sizeof(u32));
 
-    // Green pixel
-    data[0] = 0x14;  // Red
-    data[1] = 0xff;  // Blue
-    data[2] = 0x0;   // Green
+    // #b48ead / rgb(180, 142, 173)
+    data[0] = 0xb4;   // Red
+    data[1] = 0x8e;   // Blue
+    data[2] = 0xad;   // Green
+    data[3] = 0x0;
 
-   write_bmp_file(
+    write_bmp_file(
       "test_file.bmp",
       bmp_image.header.filesize,
       bmp_image.header.offset,
