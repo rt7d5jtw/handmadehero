@@ -67,6 +67,23 @@ struct Win32_OffscreenBuffer win32_offscreen_buffer = {
 };
 static int client_width;
 
+typedef struct Win32WindowDimensions Win32WindowDimensions;
+struct Win32WindowDimensions {
+  u32 width;
+  u32 height;
+};
+
+Win32WindowDimensions win32_get_window_dimensions(HWND window_handle) {
+  Win32WindowDimensions dims = {0};
+  RECT client_rect;
+  GetClientRect(window_handle, &client_rect);
+
+  dims.width  = client_rect.right - client_rect.left;
+  dims.height = client_rect.bottom - client_rect.top;
+
+  return dims;
+}
+
 /*
  * This uses a technique to pack 4 bytes into one 32-bit integer (BGRA order).
  * This is done with bitwise shifts and OR operations.
@@ -223,11 +240,8 @@ internal void win32_paint_bitmap(HWND window_handle, PAINTSTRUCT paint, HDC devi
 }
 
 
-internal void win32_display_buffer_in_window(Win32_OffscreenBuffer* buffer, HDC device_context, RECT client_rect)
+internal void win32_display_buffer_in_window(Win32_OffscreenBuffer* buffer, HDC device_context, u32 width, u32 height)
 {
-  int width   = client_rect.right - client_rect.left;
-  int height  = client_rect.bottom - client_rect.top;
-
   /*
    * Copies Device-Independent Bitmap (DIB) (an pixel array) over to destination bitmap.
    * has stretching and compressing capabilities.
@@ -268,8 +282,8 @@ int WINAPI WinMain(
     int nCmdShow
 )
 {
-  (void)pCmdLine;
-  (void)hPrevInstance;
+  (void) pCmdLine;
+  (void) hPrevInstance;
 
   // WNDCLASS
   // https://learn.microsoft.com/en-us/previous-versions/ms942860(v=msdn.10)
@@ -284,8 +298,10 @@ int WINAPI WinMain(
   // https://learn.microsoft.com/en-us/windows/win32/learnwin32/creating-a-window
   wchar_t const window_class_name[] = L"Sample Window Class";
 
-  HWND windowHandle = NULL;
+  HWND window_handle = NULL;
   static MSG msg    = {0};
+
+  win32_resize_dib_section(&win32_offscreen_buffer, 1280, 720);
 
   windowClass.cbSize        = sizeof(WNDCLASSEX);
   windowClass.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
@@ -304,7 +320,7 @@ int WINAPI WinMain(
   if (!RegisterClassEx(&windowClass)) {
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebox
     MessageBox(
-        windowHandle,
+        window_handle,
         L"Window Registration Failed!",
         L"Error!",
         MB_ICONEXCLAMATION | MB_OK
@@ -345,7 +361,7 @@ int WINAPI WinMain(
   LPVOID lp_param    = NULL;
 
   // Window handle for
-  windowHandle = CreateWindowEx(
+  window_handle = CreateWindowEx(
       extended_window_style,
       window_class_name,
       window_name,
@@ -360,9 +376,9 @@ int WINAPI WinMain(
       lp_param
   );
 
-  if (windowHandle == NULL) {
+  if (window_handle == NULL) {
     MessageBox(
-      windowHandle,
+      window_handle,
       L"Window Creation Failed!",
       L"Error!",
       MB_ICONEXCLAMATION | MB_OK
@@ -372,16 +388,18 @@ int WINAPI WinMain(
 
   // ShowWindow
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
-  ShowWindow(windowHandle, nCmdShow);
+  ShowWindow(window_handle, nCmdShow);
 
   RECT rect;
-  GetClientRect(windowHandle, &rect);
+  GetClientRect(window_handle, &rect);
   client_width = rect.right - rect.left;
 
   u32 x_offset = 0;
   u32 y_offset = 0;
 
   while (running) {
+    HDC device_context = GetDC(window_handle);
+
     // Run the message loop
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-peekmessagew
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-dispatchmessagea
@@ -395,8 +413,14 @@ int WINAPI WinMain(
     // GDI Drawing logic {{{
 
     draw_random_gradient(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset, y_offset);
-    ++x_offset;
 
+    Win32WindowDimensions dims = win32_get_window_dimensions(window_handle);
+    win32_display_buffer_in_window(&win32_offscreen_buffer, device_context, dims.width, dims.height);
+
+    ReleaseDC(window_handle, device_context);
+
+    ++x_offset;
+    y_offset += 2;
     /*
      InvalidateRect marks a section of the window invalid and
      needing to be redrawn. Passing in NULL invalidates the entire window.
@@ -407,12 +431,12 @@ int WINAPI WinMain(
      the window whenever we want rather than waiting for Windows to tell us to.
     */
 
-    InvalidateRect(
-        windowHandle, NULL, FALSE
-    ); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-invalidaterect
-    UpdateWindow(
-        windowHandle
-    ); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatewindow
+    //InvalidateRect(
+    //    window_handle, NULL, FALSE
+    //); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-invalidaterect
+    //UpdateWindow(
+    //    window_handle
+    //); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatewindow
     // }}}
   }
 
@@ -456,22 +480,34 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
     //} break;
     // GDI Drawing logic {{{
     case WM_PAINT: {
+      /*
       static PAINTSTRUCT paint;
       static HDC device_context;
       win32_paint_bitmap(window_handle, paint, device_context);
+      */
+
+      PAINTSTRUCT paint;
+      HDC device_context = BeginPaint(window_handle, &paint);
+
+      Win32WindowDimensions dims = win32_get_window_dimensions(window_handle);
+      win32_display_buffer_in_window(&win32_offscreen_buffer, device_context, dims.width, dims.height);
+
+      EndPaint(window_handle, &paint);
     } break;
     // Set the size of the pixel array and finish setting up GDI bitmap
-    case WM_SIZE: {
-      // NOTE: When the biHeight field is negative, this is the clue to Windows to treat this bitmap as top-down, instead of bottom-up, meaning that the first three bytes of the image are the color for the top left pixel in the bitmap, not the bottom left.
+    //case WM_SIZE: {
+    //  // NOTE: When the biHeight field is negative, this is the clue to Windows to treat this bitmap as top-down, instead of bottom-up, meaning that the first three bytes of the image are the color for the top left pixel in the bitmap, not the bottom left.
 
-      //RECT client_rect;
-      //GetClientRect(window_handle, &client_rect);
-      //int width   = client_rect.right - client_rect.left;
-      //int height  = client_rect.bottom - client_rect.top;
-      //win32_resize_dib_section(win32_offscreen_buffer, width, height);
+    //  /*
+    //  RECT client_rect;
+    //  GetClientRect(window_handle, &client_rect);
+    //  int width   = client_rect.right - client_rect.left;
+    //  int height  = client_rect.bottom - client_rect.top;
+    //  win32_resize_dib_section(win32_offscreen_buffer, width, height);
+    //  */
 
-      win32_resize_bitmap(&win32_offscreen_buffer, lParam);
-   } break;
+    //  win32_resize_bitmap(&win32_offscreen_buffer, lParam);
+    //} break;
     /// }}}
     default: {
       result = DefWindowProc(window_handle, msg, wParam, lParam);
