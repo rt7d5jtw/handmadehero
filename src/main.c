@@ -62,9 +62,16 @@ struct Win32_OffscreenBuffer {
   HDC frame_device_context;
 };
 
-struct Win32_OffscreenBuffer win32_offscreen_buffer = {.bytes_per_pixel = 4};
+struct Win32_OffscreenBuffer win32_offscreen_buffer = {
+  .bytes_per_pixel = 4
+};
 static int client_width;
 
+/*
+ * This uses a technique to pack 4 bytes into one 32-bit integer (BGRA order).
+ * This is done with bitwise shifts and OR operations.
+ * NOTE: Windows GDI uses BGRA (blue, green, red, alpha) format
+ */
 void draw_random_gradient(
     u32* bitmap_memory,
     u32 bitmap_width,
@@ -73,29 +80,35 @@ void draw_random_gradient(
     u32 y_offset
 )
 {
+  /* stride or pitch: the total number of bytes in one horizontal line of the bitmap */
   u32 pitch = bitmap_width * win32_offscreen_buffer.bytes_per_pixel;
+  /* pointer to the first byte of the current row being processed */
   u8* row   = (u8*)bitmap_memory;
 
+  /* Iterate through each row (y-coordinate) */
   for (u32 y = 0; y < bitmap_height; ++y) {
-    u8* pixel = (u8*)row;
+    // first byte of the current pixel in the row
+    u32* pixel = (u32*)row;
+    /* Iterate through each pixel in the current row (x-coordinate) */
     for (u32 x = 0; x < bitmap_width; ++x) {
       // Blue channel
-      *pixel = (u8)(x + x_offset);
-      ++pixel;
-
+      u8 blue  = (u8)(x + x_offset);
       // Green channel
-      *pixel = (u8)(y + y_offset);
-      ++pixel;
-
+      u8 green = (u8)(y + y_offset);
       // Red channel
-      *pixel = 0;
-      ++pixel;
-
+      u8 red   = 0;
       // Alpha channel
-      *pixel = 0;
-      ++pixel;
+      u8 alpha = 0;
+
+      // pack all four channels into the u32 in BGRA order
+      u32 packed_colors = (alpha << 24) | (red << 16) | (green << 8) | blue;
+
+      // Write all the color channels for the pixel for this byte, and advance the 4-byte pointer.
+      // NOTE: post-increment pixel++, after the assignment is complete, advance the pixel pointer to the next memory location.
+      *pixel++ = packed_colors;
     }
 
+    // Move the row pointer down by the pitch (stride) to start the next row
     row += pitch;//win32_offscreen_buffer.pitch;
   }
 }
@@ -113,34 +126,35 @@ void draw_pixel(int x, int y, u32 color) {
   *pixel = color;
 }
 
-internal void win32_resize_dib_section(Win32_OffscreenBuffer win32_offscreen_buffer, int width, int height)
+/* frees previous bitmap, allocates a new bitmap buffer, initializes and sets it up */
+internal void win32_resize_dib_section(Win32_OffscreenBuffer* offscreen_buffer, int width, int height)
 {
-  if (win32_offscreen_buffer.pixels) { VirtualFree(win32_offscreen_buffer.pixels, 0, MEM_RELEASE); }
+  if (offscreen_buffer->pixels) { VirtualFree(offscreen_buffer->pixels, 0, MEM_RELEASE); }
 
-  win32_offscreen_buffer.width = width;
-  win32_offscreen_buffer.height = height;
-  win32_offscreen_buffer.bytes_per_pixel = 4;
+  offscreen_buffer->width = width;
+  offscreen_buffer->height = height;
+  offscreen_buffer->bytes_per_pixel = 4;
 
-  win32_offscreen_buffer.info.bmiHeader.biSize = sizeof(win32_offscreen_buffer.info.bmiHeader);
-  win32_offscreen_buffer.info.bmiHeader.biWidth = win32_offscreen_buffer.width;
-  win32_offscreen_buffer.info.bmiHeader.biHeight = -cast(s32)(win32_offscreen_buffer.height);
-  win32_offscreen_buffer.info.bmiHeader.biPlanes = 1;
-  win32_offscreen_buffer.info.bmiHeader.biBitCount = 32;
-  win32_offscreen_buffer.info.bmiHeader.biCompression = BI_RGB;
+  offscreen_buffer->info.bmiHeader.biSize = sizeof(offscreen_buffer->info.bmiHeader);
+  offscreen_buffer->info.bmiHeader.biWidth = offscreen_buffer->width;
+  offscreen_buffer->info.bmiHeader.biHeight = -cast(s32)(offscreen_buffer->height);
+  offscreen_buffer->info.bmiHeader.biPlanes = 1;
+  offscreen_buffer->info.bmiHeader.biBitCount = 32;
+  offscreen_buffer->info.bmiHeader.biCompression = BI_RGB;
 
-  int bitmap_memory_size = win32_offscreen_buffer.bytes_per_pixel * (win32_offscreen_buffer.width * win32_offscreen_buffer.height);
+  int bitmap_memory_size = offscreen_buffer->bytes_per_pixel * (offscreen_buffer->width * offscreen_buffer->height);
 
-  win32_offscreen_buffer.pixels = VirtualAlloc(0, bitmap_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  offscreen_buffer->pixels = VirtualAlloc(0, bitmap_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 }
 
-internal void win32_resize_bitmap(Win32_OffscreenBuffer* win32_offscreen_buffer, LPARAM lParam)
+internal void win32_resize_bitmap(Win32_OffscreenBuffer* offscreen_buffer, LPARAM lParam)
 {
-  win32_offscreen_buffer->info.bmiHeader.biWidth  = LOWORD(lParam);
-  win32_offscreen_buffer->info.bmiHeader.biHeight = -HIWORD(lParam); // DIBs are based in a coordinate system that is upside down relative to Windows, source: https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
+  offscreen_buffer->info.bmiHeader.biWidth  = LOWORD(lParam);
+  offscreen_buffer->info.bmiHeader.biHeight = -HIWORD(lParam); // DIBs are based in a coordinate system that is upside down relative to Windows, source: https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
 
   // Delete already existing bitmap
-  if (win32_offscreen_buffer->bitmap_handle)
-    DeleteObject(win32_offscreen_buffer->bitmap_handle);
+  if (offscreen_buffer->bitmap_handle)
+    DeleteObject(offscreen_buffer->bitmap_handle);
 
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
   // Create a bitmap
@@ -151,23 +165,23 @@ internal void win32_resize_bitmap(Win32_OffscreenBuffer* win32_offscreen_buffer,
   // ppvBits  - a pointer to a variable that receives a pointer ot the location of the DIB bit values.
   // hSection - a handle to a file-mapping object that hte function will use to create the DIB.
   // offset   - the offset form the beginning of the file-mapping object referenced by hSection where storage for the bitmap bit values is to begin.
-  win32_offscreen_buffer->bitmap_handle = CreateDIBSection(
+  offscreen_buffer->bitmap_handle = CreateDIBSection(
       NULL,
-      &win32_offscreen_buffer->info,
+      &offscreen_buffer->info,
       DIB_RGB_COLORS,
       (
           void**
-      )&win32_offscreen_buffer->pixels,
+      )&offscreen_buffer->pixels,
       0,
       0
   );
 
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject
   // point device context to the bitmap
-  SelectObject(win32_offscreen_buffer->frame_device_context, win32_offscreen_buffer->bitmap_handle);
+  SelectObject(offscreen_buffer->frame_device_context, offscreen_buffer->bitmap_handle);
 
-  win32_offscreen_buffer->width  = LOWORD(lParam);
-  win32_offscreen_buffer->height = HIWORD(lParam);
+  offscreen_buffer->width  = LOWORD(lParam);
+  offscreen_buffer->height = HIWORD(lParam);
 }
 
 internal void win32_paint_bitmap(HWND window_handle, PAINTSTRUCT paint, HDC device_context)
@@ -176,18 +190,29 @@ internal void win32_paint_bitmap(HWND window_handle, PAINTSTRUCT paint, HDC devi
       window_handle, &paint
   ); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
 
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
-  // Painting function to copy the pixel array over to the window in the
-  // specified rectangle
+  // NOTE: origin (0,0) is conventionally located at the top-left corner for Windows GDI.
+
+  /* https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
+   * Painting function to copy the pixel array over to the window in the
+   * specified rectangle. Performs a bit-block transfer between two device contexts.
+   */
   BitBlt(
+      /* destination device context */
       device_context,
+      /* x coordinate of the top-left corner of the destination rectangle */
       paint.rcPaint.left,
+      /* y coordinate of the top-left corner of the destination rectangle */
       paint.rcPaint.top,
+      /* width and height */
       paint.rcPaint.right - paint.rcPaint.left,
       paint.rcPaint.bottom - paint.rcPaint.top,
+      /* source device context */
       win32_offscreen_buffer.frame_device_context,
+      /* x coordinate of the top-left corner of the source rectangle */
       paint.rcPaint.left,
+      /* y coordinate of the top-left corner of the source rectangle */
       paint.rcPaint.top,
+      /* copy from source bitmap to destination bitmap */
       SRCCOPY
   );
 
@@ -203,10 +228,20 @@ internal void win32_display_buffer_in_window(Win32_OffscreenBuffer* buffer, HDC 
   int width   = client_rect.right - client_rect.left;
   int height  = client_rect.bottom - client_rect.top;
 
+  /*
+   * Copies Device-Independent Bitmap (DIB) (an pixel array) over to destination bitmap.
+   * has stretching and compressing capabilities.
+   */
   StretchDIBits(device_context,
+                /*
+                 * xDest, yDest, destWidth, destHeight
+                 * xSrc,  ySrc,  srcWidth,  srcHeight
+                 */
                 0, 0, width, height,
                 0, 0, buffer->width, buffer->height,
+                /* Source DIB bits (the raw pixel array) */
                 buffer->pixels,
+                /* Pointer to the BITMAPINFO structure for pixel format */
                 &buffer->info,
                 DIB_RGB_COLORS,
                 SRCCOPY
@@ -229,7 +264,7 @@ LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
 int WINAPI WinMain(
     HINSTANCE hInstance,
     HINSTANCE hPrevInstance,
-    PWSTR pCmdLine,
+    LPSTR pCmdLine,
     int nCmdShow
 )
 {
