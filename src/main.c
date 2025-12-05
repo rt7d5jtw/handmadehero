@@ -536,31 +536,102 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 bool keyboard[256]  = {0};
 global bool running = true;
 
+/* GUI MODE:
+ * 0 -> "draw gradient mode"
+ * 1 -> "draw white background for drawing"
+ */
+enum GUI_MODE {
+  MODE_GRADIENT_ANIMATION = 0,
+  MODE_DRAWING            = 1
+};
+
+global enum GUI_MODE current_gui_mode = MODE_GRADIENT_ANIMATION;
+
+#  define WINDOW_WIDTH  1480
+#  define WINDOW_HEIGHT 860
+
 #  define DARK_GREEN 0x8aa37f
 #  define BLUE       0x0000ff
 #  define PINK       0xffa6c9
 #  define RED        0xcd1c18
 #  define WHITE      0xffffff
+#  define BLACK      0x000000
 
-void draw_to_buffer(
-    u64 yColor,
-    u64 xColor,
-    XImage* image,
-    GC gc,
-    Window mainWindow,
-    Display* mainDisplay
-)
-{
-  for (int y = 0; y < 600; y += 1) {
-    for (int x = 0; x < 800; x += 1) {
-      // Checker pattern
-      unsigned long pixel = ((x ^ y) & 1) ? yColor : xColor;
-      XPutPixel(image, x, y, pixel);
+void x11_clear_buffer(XImage* image, u64 color) {
+  if (!image) return;
+
+  int width        = image->width;
+  int height       = image->height;
+  u8* buffer_start = (u8*) image->data;
+  int pitch        = image->bytes_per_line;
+
+  for (int y = 0; y < height; ++y) {
+    u32* pixel = (u32*)(buffer_start + (y * pitch));
+    for (int x = 0; x < width; ++x) {
+      *pixel++ = color;
     }
   }
+}
 
-  // https://tronche.com/gui/x/xlib/graphics/XPutImage.html
-  XPutImage(mainDisplay, mainWindow, gc, image, 0, 0, 0, 0, 800, 600);
+void x11_render_buffer(Display* display, Window window, GC gc, XImage* image) {
+  if (image && display && window && gc) {
+    XPutImage(
+      display,
+      window,
+      gc,
+      image,
+      0, 0, 0, 0 ,
+      image->width,
+      image->height
+    );
+    XFlush(display);
+  }
+}
+
+void draw_random_gradient(
+    u64 x_offset,
+    u64 y_offset,
+    XImage* image
+)
+{
+  if (!image) return;
+
+  int height       = image->height;
+  int width        = image->width;
+  // get stride (pitch) from the XImage struct
+  int pitch        = image->bytes_per_line;
+  u8* buffer_start = (u8*) image->data;
+
+  for (int y = 0; y < height; y += 1) {
+    // calculate the starting address of the current row
+    u32* pixel = (u32 *)(buffer_start + (y * pitch));
+    for (int x = 0; x < width; x += 1) {
+
+      // PIXEL COLOR CALCULATION
+      u8 blue  = (u8)(x + x_offset);
+      u8 green = (u8)(y + y_offset);
+      u8 red   = 0;
+      u8 alpha = 0;
+
+      // NOTE: explicitly packing 32-bits, BGRA/BGR packing assumed, X11's byte order can vary.
+      u32 packed_colors = (alpha << 24) | (red << 16) | (green << 8) | blue;
+      // direct memory write
+      *pixel++ = packed_colors;
+    }
+  }
+}
+
+void x11_draw_pixel(XImage * image, int x, int y, u64 color) {
+  if (!image || x < 0 || y < 0 || x >= image->width || y >= image->height) {
+    return; // bounds check
+  }
+
+  u8* buffer_start = (u8*)image->data;
+  int pitch        = image->bytes_per_line;
+  // calculate memory offset for 32 bit format
+  u32* pixel       = (u32*)(buffer_start + (y * pitch) + (x * 4));
+  // direct write to memory
+  *pixel           = (u32)color;
 }
 
 GC create_x11_graphics_context(
@@ -604,26 +675,35 @@ GC create_x11_graphics_context(
   return gc;
 }
 
+int x11_prevent_data_free(Display* display, XImage* image) {
+  // supress unused parameter warnings
+  (void)display;
+  (void)image;
+  return 0;
+}
+
 int main(void)
 {
   //syscall(SYS_write, 1, "I like pancakes\n", 17);
 
-  BitmapImage bmp_image = read_bmp_file("blue_pixel_24.bmp");
-  (void)bmp_image;
+  //BitmapImage bmp_image = read_bmp_file("blue_pixel_24.bmp");
+  //(void)bmp_image;
   // printf("bmp_image -> %d", (int*)bmp_image);
 
   u32 x                = 0;
   u32 y                = 0;
-  u32 width            = 800;
-  u32 height           = 600;
+  u32 width            = WINDOW_WIDTH;
+  u32 height           = WINDOW_HEIGHT;
   u32 borderWidth      = 0;
   u32 windowDepth      = CopyFromParent;
   u32 windowClass      = CopyFromParent;
   Visual* windowVisual = CopyFromParent;
 
-  u32 attributeValueMask                = CWBackPixel;
+  u32 attributeValueMask                = CWBackPixmap | CWEventMask; // tell x11 to look at background_pixmap and event_mask
   XSetWindowAttributes windowAttributes = {0};
+  windowAttributes.background_pixmap    = None; // prevent flickering by suppressing erase
   windowAttributes.background_pixel     = DARK_GREEN;
+  windowAttributes.event_mask           = KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask | ButtonReleaseMask | Button1MotionMask | StructureNotifyMask; // StructureNotifyMask for resizing
 
   // XOpenDisplay https://linux.die.net/man/3/xopendisplay
   // Open connection with the X server
@@ -648,7 +728,6 @@ int main(void)
       attributeValueMask,
       &windowAttributes
   );
-  XEvent generalEvent;
 
   // XMapWindow https://tronche.com/gui/x/xlib/window/XMapWindow.html
   XMapWindow(mainDisplay, mainWindow);
@@ -662,27 +741,36 @@ int main(void)
   // XSetForeground(mainDisplay, gc, BlackPixel(mainDisplay, screen));
   int screen = DefaultScreen(mainDisplay);
 
+  char* x11_backbuffer = malloc(WINDOW_WIDTH * WINDOW_HEIGHT * 4);
+  if (!x11_backbuffer) {
+    fprintf(stderr, "Fatal Error: Failed to allocate initial backbuffer for X11.\n");
+    XFreeGC(mainDisplay, gc);
+    XDestroyWindow(mainDisplay, mainWindow);
+    XCloseDisplay(mainDisplay);
+    return 1;
+  }
+
   XImage* image = XCreateImage(
       mainDisplay,
       DefaultVisual(mainDisplay, screen),
       DefaultDepth(mainDisplay, screen),
       ZPixmap,
       0,
-      NULL,
-      800,
-      600,
+      x11_backbuffer,
+      WINDOW_WIDTH,
+      WINDOW_HEIGHT,
       32,
       0
   );
 
   // https://tronche.com/gui/x/xlib/event-handling/XSelectInput.html
   // https://tronche.com/gui/x/xlib/events/mask.html
-  XSelectInput(
-      mainDisplay,
-      mainWindow,
-      KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask |
-          ButtonReleaseMask | Button1MotionMask
-  );
+  //XSelectInput(
+  //    mainDisplay,
+  //    mainWindow,
+  //    KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask |
+  //        ButtonReleaseMask | Button1MotionMask
+  //);
 
   // https://tronche.com/gui/x/xlib/event-handling/XPending.html
   // while (XPending(mainDisplay) > 0) {}
@@ -702,117 +790,189 @@ int main(void)
   // XFlush(mainDisplay);
   // char* mytext = "This is some text";
 
-  image->data = malloc(image->bytes_per_line * image->height);
+  //image->data = malloc(image->bytes_per_line * image->height);
+  x11_clear_buffer(image, BLACK);
+
+  XEvent generalEvent;
+  u64 x_offset = 0;
+  u64 y_offset = 0;
 
   while (running) {
-    XNextEvent(mainDisplay, &generalEvent);
+    // poll (don't wait for all events) (similar to PeekMessageW)
+    while (XPending(mainDisplay) > 0) {
+      XNextEvent(mainDisplay, &generalEvent);
 
-    if (generalEvent.type == KeyPress)
-      printf("KeyPress: %x\n", generalEvent.xkey.keycode);
-    else
-      printf("X11 Event: %d\n", generalEvent.type);
-
-    switch (generalEvent.type) {
-      // https://tronche.com/gui/x/xlib/events/exposure/expose.html
-      case Expose: {
-        printf("X11 Expose Event: %d\n", generalEvent.xexpose.type);
-
-        draw_to_buffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
-
-        // if (generalEvent.xexpose.count) break;
-        ////XSetForeground(mainDisplay, gc, WhitePixel(mainDisplay,
-        /// screen_num)); /XDrawString(mainDisplay, mainWindow, gc, 10, 10,
-        /// mytext, strlen(mytext));
-        // XFillRectangle(mainDisplay, mainWindow, gc, 0, 100, 50, 50);
-        break;
+      #ifdef DEBUG
+      if (generalEvent.type == KeyPress) {
+        printf("[DEBUG] KeyPress: %x\n", generalEvent.xkey.keycode);
+      } else {
+        printf("[DEBUG] X11 Event: %d\n", generalEvent.type);
       }
-      case MotionNotify: {
-        int symbol = XLookupKeysym(&generalEvent.xkey, 0);
-        // Mouse position
-        int x = generalEvent.xkey.x;
-        int y = generalEvent.xkey.y;
+      #endif
 
-        printf(
-            "[DEBUG] MotionNotify symbol: %d, coordinates: [%d, %d]\n",
-            symbol,
-            x,
-            y
-        );
+      switch (generalEvent.type) {
+        case ConfigureNotify: {
+          int new_width  = generalEvent.xconfigure.width;
+          int new_height = generalEvent.xconfigure.height;
 
-        XDrawPoint(mainDisplay, mainWindow, gc, x, y);
-        break;
-      }
-      case ButtonPress: {
-        int symbol = XLookupKeysym(&generalEvent.xkey, 0);
-        // Mouse position
-        int x = generalEvent.xkey.x;
-        int y = generalEvent.xkey.y;
+          if (new_width != image->width || new_height != image->height) {
+            printf("[DEBUG] Resizing buffer to %dx%d\n", new_width, new_height);
 
-        printf(
-            "[DEBUG] ButtonPress symbol: %d, coordinates: [%d, %d]\n",
-            symbol,
-            generalEvent.xkey.x,
-            generalEvent.xkey.y
-        );
+            XDestroyImage(image);
+            image = XCreateImage(
+              mainDisplay,
+              DefaultVisual(mainDisplay, screen),
+              DefaultDepth(mainDisplay, screen),
+              ZPixmap,
+              0,
+              NULL, // data pointer is null initially
+              new_width,
+              new_height,
+              32,
+              0
+            );
 
-        XDrawPoint(mainDisplay, mainWindow, gc, x, y);
-        break;
-      }
-      case ButtonRelease: {
-        int symbol = XLookupKeysym(&generalEvent.xkey, 0);
+            // reallocate for the new size
+            image->data = malloc(image->bytes_per_line * image->height);
+            if (!image->data) {
+              fprintf(stderr, "Fatal Error: Failed to reallocate image data during resize.\n");
+              running = false;
+            }
 
-        // Mouse position
-        int x = generalEvent.xkey.x;
-        int y = generalEvent.xkey.y;
-
-        printf(
-            "[DEBUG] Mouse button released, symbol: %d, [%d, %d]\n",
-            symbol,
-            x,
-            y
-        );
-        break;
-      }
-      case KeyPress: {
-        int symbol           = XLookupKeysym(&generalEvent.xkey, 0);
-        keyboard[(u8)symbol] = true;
-
-        printf("KeyPress: %x\n", generalEvent.xkey.keycode);
-
-        switch (symbol) {
-          case XK_Escape: {
-            printf("Escape pressed\n");
-          } break;
-          // case XK_Pointer_Button1: {
-          //   printf("Pointer Button 1 pressed\n");
-          //   break;
-          // }
-          case XK_r: {
-            XFlush(mainDisplay);
-            XSync(mainDisplay, 1);
-            draw_to_buffer(WHITE, WHITE, image, gc, mainWindow, mainDisplay);
-            break;
-          }
-          case XK_a: {
-            // printf("\"a\" pressed\n");
-            XFlush(mainDisplay);
-            XSync(mainDisplay, 1);
-            draw_to_buffer(BLUE, BLUE, image, gc, mainWindow, mainDisplay);
-            break;
-          }
-          case XK_b: {
-            draw_to_buffer(RED, RED, image, gc, mainWindow, mainDisplay);
-            break;
-          }
-          case XK_q: {
-            printf("Closing application\n");
-            running = false;
+            if (current_gui_mode == MODE_DRAWING) {
+              x11_clear_buffer(image, WHITE);
+            }
           } break;
         }
+        // https://tronche.com/gui/x/xlib/events/exposure/expose.html
+        case Expose: {
+          printf("X11 Expose Event: %d\n", generalEvent.xexpose.type);
+          x11_render_buffer(mainDisplay, mainWindow, gc, image);
+          //draw_to_buffer(y_color, x_color, image, gc, mainWindow, mainDisplay);
+          // if (generalEvent.xexpose.count) break;
+          ////XSetForeground(mainDisplay, gc, WhitePixel(mainDisplay,
+          /// screen_num)); /XDrawString(mainDisplay, mainWindow, gc, 10, 10,
+          /// mytext, strlen(mytext));
+          // XFillRectangle(mainDisplay, mainWindow, gc, 0, 100, 50, 50);
+          break;
+        }
+        case MotionNotify: {
+          if (current_gui_mode == MODE_DRAWING && (generalEvent.xmotion.state & Button1Mask)) {
+            int x_m = generalEvent.xmotion.x;
+            int y_m = generalEvent.xmotion.y;
+            x11_draw_pixel(image, x_m, y_m, BLACK);
+            x11_render_buffer(mainDisplay, mainWindow, gc, image);
+          }
 
-      } break;
+          //int symbol = XLookupKeysym(&generalEvent.xkey, 0);
+          //// Mouse position
+          //int x = generalEvent.xkey.x;
+          //int y = generalEvent.xkey.y;
+
+          //printf(
+          //    "[DEBUG] MotionNotify symbol: %d, coordinates: [%d, %d]\n",
+          //    symbol,
+          //    x,
+          //    y
+          //);
+          //XDrawPoint(mainDisplay, mainWindow, gc, x, y);
+          break;
+        }
+        case ButtonPress: {
+          if (current_gui_mode == MODE_DRAWING && generalEvent.xbutton.button == Button1) {
+            int symbol = XLookupKeysym(&generalEvent.xkey, 0);
+            // Mouse position
+            int x = generalEvent.xkey.x;
+            int y = generalEvent.xkey.y;
+
+            #ifdef DEBUG
+            printf(
+                "[DEBUG] ButtonPress symbol: %d, coordinates: [%d, %d]\n",
+                symbol,
+                generalEvent.xkey.x,
+                generalEvent.xkey.y
+            );
+            #endif
+
+            x11_draw_pixel(image, x, y, BLACK);
+            x11_render_buffer(mainDisplay, mainWindow, gc, image);
+          }
+          break;
+        }
+        case ButtonRelease: {
+          #ifdef DEBUG
+          int symbol = XLookupKeysym(&generalEvent.xkey, 0);
+
+          // Mouse position
+          int x = generalEvent.xkey.x;
+          int y = generalEvent.xkey.y;
+
+          printf(
+              "[DEBUG] Mouse button released, symbol: %d, [%d, %d]\n",
+              symbol,
+              x,
+              y
+          );
+          #endif
+          break;
+        }
+        case KeyPress: {
+          int symbol           = XLookupKeysym(&generalEvent.xkey, 0);
+          keyboard[(u8)symbol] = true;
+
+          printf("KeyPress: %x\n", generalEvent.xkey.keycode);
+
+          switch (symbol) {
+            case XK_Escape: {
+              printf("Escape pressed\n");
+            } break;
+            // case XK_Pointer_Button1: {
+            //   printf("Pointer Button 1 pressed\n");
+            //   break;
+            // }
+            case XK_d: {
+              // Toggle DRAWING gui mode
+              current_gui_mode = MODE_DRAWING;
+              x11_clear_buffer(image, WHITE);
+              x11_render_buffer(mainDisplay, mainWindow, gc, image);
+              printf("[DEBUG] Mode set to DRAWING: White canvas setup.\n");
+            } break;
+            case XK_r: {
+              if (current_gui_mode == MODE_DRAWING) {
+                x11_clear_buffer(image, WHITE);
+              } else {
+                x_offset = 0;
+                y_offset = 0;
+              }
+              x11_render_buffer(mainDisplay, mainWindow, gc, image);
+            } break;
+            case XK_a: {
+              // printf("\"a\" pressed\n");
+              current_gui_mode = MODE_GRADIENT_ANIMATION;
+              printf("[DEBUG] Mode set to ANIMATION: Gradient setup.\n");
+            } break;
+            case XK_q: {
+              printf("Closing application\n");
+              running = false;
+            } break;
+          }
+
+        } break;
+      }
+    }
+
+    if (current_gui_mode == MODE_GRADIENT_ANIMATION) {
+      // move the animation
+      ++x_offset;
+      y_offset += 2;
+      // render
+      draw_random_gradient(x_offset, y_offset, image);
+      x11_render_buffer(mainDisplay, mainWindow, gc, image);
     }
   }
+
+  // Wait for the X Server to process all buffered requests and clear the queue before cleanup
+  XSync(mainDisplay, False);
 
   // Cleanup
   XDestroyImage(image);
