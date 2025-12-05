@@ -25,6 +25,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     PRIVATE
     ${X11_LIBRARIES}
     -lX11
+    $<$<NOT:$<C_COMPILER_ID:MSVC>>:-fsanitize=address>
   )
 endif()
 
@@ -42,7 +43,7 @@ target_include_directories("${PROJECT_NAME}"
 target_compile_features(${PROJECT_NAME} PRIVATE c_std_11)
 target_compile_options(${PROJECT_NAME}
     PRIVATE
-    $<$<NOT:$<C_COMPILER_ID:MSVC>>:-Wall -Wextra -pedantic>
+    $<$<NOT:$<C_COMPILER_ID:MSVC>>:-Wall -Wextra -pedantic -Wimplicit -fsanitize=address>
     $<$<C_COMPILER_ID:MSVC>:/W4>
     )
 #target_link_libraries(${PROJECT_NAME} user32)
