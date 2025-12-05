@@ -549,6 +549,7 @@ global enum GUI_MODE current_gui_mode = MODE_GRADIENT_ANIMATION;
 
 #  define WINDOW_WIDTH  1480
 #  define WINDOW_HEIGHT 860
+#  define BYTES_PER_PIXEL 4 // 4 bytes for 32-bit color depth (e.g. BGRA)
 
 #  define DARK_GREEN 0x8aa37f
 #  define BLUE       0x0000ff
@@ -629,7 +630,7 @@ void x11_draw_pixel(XImage * image, int x, int y, u64 color) {
   u8* buffer_start = (u8*)image->data;
   int pitch        = image->bytes_per_line;
   // calculate memory offset for 32 bit format
-  u32* pixel       = (u32*)(buffer_start + (y * pitch) + (x * 4));
+  u32* pixel       = (u32*)(buffer_start + (y * pitch) + (x * BYTES_PER_PIXEL));
   // direct write to memory
   *pixel           = (u32)color;
 }
@@ -741,7 +742,7 @@ int main(void)
   // XSetForeground(mainDisplay, gc, BlackPixel(mainDisplay, screen));
   int screen = DefaultScreen(mainDisplay);
 
-  char* x11_backbuffer = malloc(WINDOW_WIDTH * WINDOW_HEIGHT * 4);
+  char* x11_backbuffer = malloc(WINDOW_WIDTH * WINDOW_HEIGHT * BYTES_PER_PIXEL);
   if (!x11_backbuffer) {
     fprintf(stderr, "Fatal Error: Failed to allocate initial backbuffer for X11.\n");
     XFreeGC(mainDisplay, gc);
