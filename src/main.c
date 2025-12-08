@@ -1,15 +1,15 @@
 /* vi: foldmethod=marker
  */
 
-#define _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_DEPRECATE
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include "base.h"
 
 #if defined(_WIN32) // Windows code {{{
+
+#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_DEPRECATE
 
 #  ifndef UNICODE
 #    define UNICODE
@@ -693,7 +693,7 @@ int main(void)
   u32 windowClass      = CopyFromParent;
   Visual* windowVisual = CopyFromParent;
 
-  u32 attributeValueMask                = CWBackPixmap | CWEventMask; // tell x11 to look at background_pixmap and event_mask
+  u32 attributeValueMask                = CWBackPixmap | CWEventMask | CWBitGravity; // tell x11 to look at background_pixmap and event_mask
   XSetWindowAttributes windowAttributes = {0};
   windowAttributes.background_pixmap    = None; // prevent flickering by suppressing erase
   windowAttributes.background_pixel     = DARK_GREEN;
@@ -835,6 +835,8 @@ int main(void)
 
             if (current_gui_mode == MODE_DRAWING) {
               x11_clear_buffer(image, WHITE);
+            } else if (current_gui_mode == MODE_GRADIENT_ANIMATION) {
+              draw_random_gradient(x_offset, y_offset, image);
             }
           } break;
         }
