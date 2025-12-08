@@ -755,6 +755,8 @@ int main(void)
     return 1;
   }
 
+  current_buffer_size = buffer_size;
+
   XImage* image = XCreateImage(
       mainDisplay,
       DefaultVisual(mainDisplay, screen),
@@ -822,7 +824,7 @@ int main(void)
             XDestroyImage(image);
 
             if (munmap(old_data, old_size) == -1) {
-              perror("munmap for resizing backbuffer failed");
+              perror("[ERROR] munmap for resizing backbuffer failed");
             }
 
             image = XCreateImage(
@@ -839,7 +841,7 @@ int main(void)
             );
 
             // reallocate for the new size
-            usize new_buffer_size = (usize) new_width * new_height * BYTES_PER_PIXEL;
+            usize new_buffer_size = image->bytes_per_line * image->height;
             current_buffer_size   = new_buffer_size;
             image->data = mmap(
               NULL,
@@ -851,7 +853,7 @@ int main(void)
             );
 
             if (image->data == MAP_FAILED) {
-              fprintf(stderr, "Fatal Error: Failed to reallocate image data during resize.\n");
+              fprintf(stderr, "ERROR: Failed to reallocate image data during resize.\n");
               running = false;
             }
 
@@ -994,10 +996,11 @@ int main(void)
 
   if (image && image->data) {
     // Prevent XDestroyImage from deallocating the backbuffer
+    char* imgdata = image->data;
     image->data = NULL;
 
-    if (munmap(x11_backbuffer, current_buffer_size) == -1) {
-      perror("munmap for final cleanup backbuffer failed");
+    if (munmap(imgdata, current_buffer_size) == -1) {
+      perror("[ERROR] munmap for final cleanup backbuffer failed");
     }
   }
 
