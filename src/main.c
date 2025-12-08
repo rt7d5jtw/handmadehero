@@ -525,6 +525,7 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 #  include <stdio.h>
 #  include <unistd.h>
 #  include <sys/syscall.h>
+#  include <sys/mman.h>
 #  include <stdbool.h>
 #  include <stdlib.h>
 #  include <X11/Xlib.h>
@@ -534,6 +535,7 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 #  include "bmp.h"
 
 bool keyboard[256]  = {0};
+global usize current_buffer_size = 0;
 global bool running = true;
 
 /* GUI MODE:
@@ -609,9 +611,9 @@ void draw_random_gradient(
     for (int x = 0; x < width; x += 1) {
 
       // PIXEL COLOR CALCULATION
-      u8 blue  = (u8)(x + x_offset);
-      u8 green = (u8)(y + y_offset);
-      u8 red   = 0;
+      u8 blue  = 150 + (u8)((x + y_offset) % 100);
+      u8 green = 50  + (u8)((y + x_offset) % 100);
+      u8 red   = 25 + (u8)(x - x_offset);
       u8 alpha = 0;
 
       // NOTE: explicitly packing 32-bits, BGRA/BGR packing assumed, X11's byte order can vary.
@@ -735,8 +737,17 @@ int main(void)
   // XSetForeground(mainDisplay, gc, BlackPixel(mainDisplay, screen));
   int screen = DefaultScreen(mainDisplay);
 
-  char* x11_backbuffer = malloc(WINDOW_WIDTH * WINDOW_HEIGHT * BYTES_PER_PIXEL);
-  if (!x11_backbuffer) {
+  usize buffer_size = (usize) WINDOW_WIDTH * WINDOW_HEIGHT * BYTES_PER_PIXEL;
+  char* x11_backbuffer = mmap(
+    NULL,
+    buffer_size,
+    PROT_READ | PROT_WRITE,
+    MAP_PRIVATE | MAP_ANONYMOUS,
+    -1,
+    0
+  );
+
+  if (x11_backbuffer == MAP_FAILED) {
     fprintf(stderr, "Fatal Error: Failed to allocate initial backbuffer for X11.\n");
     XFreeGC(mainDisplay, gc);
     XDestroyWindow(mainDisplay, mainWindow);
@@ -766,23 +777,13 @@ int main(void)
   //        ButtonReleaseMask | Button1MotionMask
   //);
 
-  // https://tronche.com/gui/x/xlib/event-handling/XPending.html
-  // while (XPending(mainDisplay) > 0) {}
-
   // https://gitlab.com/UltimaN3rd/croaking-kero-programming-tutorials/blob/master/opening_a_window_on_linux_with_xlib/opening_a_window_with_xlib.c
-
   // GC gc = create_x11_graphics_context(mainDisplay, mainWindow, 0);
   //  https://tronche.com/gui/x/xlib/event-handling/XSync.html
   //  Flush the output buffer and wait until all request have been received and
   //  processed by the X server
   // XSync(mainDisplay, False);
   // XFlush(mainDisplay);
-
-  ////XDrawArc(mainDisplay, mainWindow, gc, 50-(30/2), 100-(30/2), 30, 30, 0,
-  /// 360*64);
-  // XDrawLine(mainDisplay, mainWindow, gc, 10, 60, 180, 20);
-  // XFlush(mainDisplay);
-  // char* mytext = "This is some text";
 
   //image->data = malloc(image->bytes_per_line * image->height);
   x11_clear_buffer(image, BLACK);
@@ -791,6 +792,7 @@ int main(void)
   u64 x_offset = 0;
   u64 y_offset = 0;
 
+  // https://tronche.com/gui/x/xlib/event-handling/XPending.html
   while (running) {
     // poll (don't wait for all events) (similar to PeekMessageW)
     while (XPending(mainDisplay) > 0) {
@@ -812,7 +814,17 @@ int main(void)
           if (new_width != image->width || new_height != image->height) {
             printf("[DEBUG] Resizing buffer to %dx%d\n", new_width, new_height);
 
+            char* old_data = image->data;
+            usize old_size = current_buffer_size;
+
+            // Prevents XDestroyImage from deallocating the backbuffer
+            image->data = NULL;
             XDestroyImage(image);
+
+            if (munmap(old_data, old_size) == -1) {
+              perror("munmap for resizing backbuffer failed");
+            }
+
             image = XCreateImage(
               mainDisplay,
               DefaultVisual(mainDisplay, screen),
@@ -827,8 +839,18 @@ int main(void)
             );
 
             // reallocate for the new size
-            image->data = malloc(image->bytes_per_line * image->height);
-            if (!image->data) {
+            usize new_buffer_size = (usize) new_width * new_height * BYTES_PER_PIXEL;
+            current_buffer_size   = new_buffer_size;
+            image->data = mmap(
+              NULL,
+              new_buffer_size,
+              PROT_READ | PROT_WRITE,
+              MAP_PRIVATE | MAP_ANONYMOUS,
+              -1,
+              0
+            );
+
+            if (image->data == MAP_FAILED) {
               fprintf(stderr, "Fatal Error: Failed to reallocate image data during resize.\n");
               running = false;
             }
@@ -969,6 +991,15 @@ int main(void)
 
   // Wait for the X Server to process all buffered requests and clear the queue before cleanup
   XSync(mainDisplay, False);
+
+  if (image && image->data) {
+    // Prevent XDestroyImage from deallocating the backbuffer
+    image->data = NULL;
+
+    if (munmap(x11_backbuffer, current_buffer_size) == -1) {
+      perror("munmap for final cleanup backbuffer failed");
+    }
+  }
 
   // Cleanup
   XDestroyImage(image);
