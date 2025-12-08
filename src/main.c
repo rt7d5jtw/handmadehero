@@ -676,13 +676,6 @@ GC create_x11_graphics_context(
   return gc;
 }
 
-int x11_prevent_data_free(Display* display, XImage* image) {
-  // supress unused parameter warnings
-  (void)display;
-  (void)image;
-  return 0;
-}
-
 int main(void)
 {
   //syscall(SYS_write, 1, "I like pancakes\n", 17);
