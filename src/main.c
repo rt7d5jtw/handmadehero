@@ -6,6 +6,23 @@
 #include <stdbool.h>
 #include "base.h"
 
+global u32 active_prng_seed = 123456789;
+
+// Xorshift RNGs
+// https://excamera.com/sphinx/article-xorshift.html
+u32 xorshift32()
+{
+  u32 x = active_prng_seed;
+
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+
+  active_prng_seed = x;
+
+  return x;
+}
+
 #if defined(_WIN32) // Windows code {{{
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -50,8 +67,6 @@
 
 // START OF GDI Drawing declarations {{{
 
-global u32 active_prng_seed = 123456789;
-
 typedef struct Win32_OffscreenBuffer Win32_OffscreenBuffer;
 struct Win32_OffscreenBuffer {
   BITMAPINFO info;
@@ -84,21 +99,6 @@ Win32WindowDimensions win32_get_window_dimensions(HWND window_handle) {
   dims.height = client_rect.bottom - client_rect.top;
 
   return dims;
-}
-
-// Xorshift RNGs
-// https://excamera.com/sphinx/article-xorshift.html
-u32 xorshift32()
-{
-  u32 x = active_prng_seed;
-
-  x ^= x << 13;
-  x ^= x >> 17;
-  x ^= x << 5;
-
-  active_prng_seed = x;
-
-  return x;
 }
 
 void draw_snow(
@@ -640,6 +640,30 @@ void x11_render_buffer(Display* display, Window window, GC gc, XImage* image) {
   }
 }
 
+void draw_snow(XImage* image)
+{
+  int height       = image->height;
+  int width        = image->width;
+  int pitch        = image->bytes_per_line;
+  u8* buffer_start = (u8*) image->data;
+
+  for (int y = 0; y < height; y += 1) {
+    u32* pixel = (u32 *)(buffer_start + (y * pitch));
+
+    for (int x = 0; x < width; x += 1) {
+      u8 noise = (u8)xorshift32();
+
+      u8 blue  = noise;
+      u8 green = noise;
+      u8 red   = noise;
+      u8 alpha = 0;
+
+      u32 packed_channels = (alpha << 24) | (red << 16) | (green << 8) | blue;
+      *pixel++ = packed_channels;
+    }
+  }
+}
+
 void draw_random_gradient(
     u64 x_offset,
     u64 y_offset,
@@ -1035,7 +1059,8 @@ int main(void)
       ++x_offset;
       y_offset += 2;
       // render
-      draw_random_gradient(x_offset, y_offset, image);
+      //draw_random_gradient(x_offset, y_offset, image);
+      draw_snow(image);
       x11_render_buffer(mainDisplay, mainWindow, gc, image);
     }
   }
