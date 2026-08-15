@@ -7,6 +7,10 @@
 
 set msvcdir="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build"
 
+:: default build configuration
+set CONFIG=Debug
+set EXENAME=handmadehero.exe
+
 set VSCMD_DEBUG=3
 
 call %msvcdir%\vcvars64.bat > msvc_debug_log.txt
@@ -15,7 +19,7 @@ REM if not defined DevEnvDir call %msvcdir%vcvars64.bat >nul
 
 echo "Current directory %cd%"
 
-mkdir out
-pushd out
-cl -FC -Zi ..\src\main.c user32.lib gdi32.lib
+if not exist build\%CONFIG% mkdir build\%CONFIG%
+pushd build\%CONFIG%
+cl -FC -Zi -Fe:%EXENAME% ..\..\src\main.c user32.lib gdi32.lib
 popd
