@@ -14,14 +14,22 @@ Alternative: `C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\To
 Windows:
   You can just run: `\build.bat`, but note that this builds executable to: `.\out\main.exe`.
   Alternative with CMake:
-  1. `cmake -S . -B build -G "Visual Studio 17 2022" -A x64`
-  2. `cmake --build build --config Debug`
-  3. `.\build\Debug\handmade_hero.exe`
+```
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Debug
+.\build\Debug\handmade_hero.exe
+```
 
 Linux:
-  1. `$ cmake . -B build -G "Unix Makefiles"`
-  2. `$ make -C build VERBOSE=1`
-  3. `$ ./build/handmade_hero`
-
+```
+cmake . -B build -G "Unix Makefiles"
+make -C build VERBOSE=1
+./build/handmade_hero`
+```
 
 If you dont have compile_commands.json symlinked: `ln -s build/compile_commands.json .`
+
+For vim makeprg:
+```
+set makeprg=cmake\ --build\ build\ --config\ Debug
+```
