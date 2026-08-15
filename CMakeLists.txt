@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project(handmade_hero VERSION 0.1 LANGUAGES C)
+project(handmadehero VERSION 0.1 LANGUAGES C)
 
 # For clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

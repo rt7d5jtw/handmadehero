@@ -14,7 +14,7 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 
 Build:
 ```
-cmake --build build --config Debug && .\build\Debug\handmade_hero.exe
+cmake --build build --config Debug && .\build\Debug\handmadehero.exe
 ```
 
 ### Linux or BSD
@@ -26,7 +26,7 @@ cmake . -B build -G "Unix Makefiles"
 
 Build:
 ```
-make -C build VERBOSE=1 && ./build/handmade_hero`
+make -C build VERBOSE=1 && ./build/handmadehero`
 ```
 
 ### compile_commands.json
