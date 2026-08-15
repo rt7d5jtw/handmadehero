@@ -50,6 +50,8 @@
 
 // START OF GDI Drawing declarations {{{
 
+global u32 active_prng_seed = 123456789;
+
 typedef struct Win32_OffscreenBuffer Win32_OffscreenBuffer;
 struct Win32_OffscreenBuffer {
   BITMAPINFO info;
@@ -82,6 +84,52 @@ Win32WindowDimensions win32_get_window_dimensions(HWND window_handle) {
   dims.height = client_rect.bottom - client_rect.top;
 
   return dims;
+}
+
+// Xorshift RNGs
+// https://excamera.com/sphinx/article-xorshift.html
+u32 xorshift32()
+{
+  u32 x = active_prng_seed;
+
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+
+  active_prng_seed = x;
+
+  return x;
+}
+
+void draw_snow(
+  u32* bitmap_memory,
+  u32 bitmap_width,
+  u32 bitmap_height
+)
+{
+  u32 pitch  = bitmap_width * 4;
+  u8* row    = (u8*)bitmap_memory;
+
+  for (u32 y = 0; y < bitmap_height; ++y) {
+    u32* pixel = (u32*)row;
+
+    for (u32 x = 0; x < bitmap_width; ++x) {
+      u32 bits  = xorshift32();
+      u8 chance = (bits >> 8) & 0xFF;
+      u8 noise  = (chance < (255 * 40 / 100)) ? (u8)(bits & 0xFF) : 0;
+
+      u8 blue   = noise;
+      u8 green  = noise;
+      u8 red    = noise;
+      u8 alpha  = 0;
+
+      // Pack channels into BGRA
+      u32 packed_channels = (alpha << 24) | (red << 16) | (green << 8) | blue;
+
+      *pixel++ = packed_channels;
+    }
+    row += pitch;
+  }
 }
 
 /*
@@ -412,7 +460,8 @@ int WINAPI WinMain(
 
     // GDI Drawing logic {{{
 
-    draw_random_gradient(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset, y_offset);
+    //draw_random_gradient(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset, y_offset);
+    draw_snow(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height);
 
     Win32WindowDimensions dims = win32_get_window_dimensions(window_handle);
     win32_display_buffer_in_window(&win32_offscreen_buffer, device_context, dims.width, dims.height);
@@ -431,7 +480,7 @@ int WINAPI WinMain(
      the window whenever we want rather than waiting for Windows to tell us to.
     */
 
-    //InvalidateRect(
+    //InvalidateRct(
     //    window_handle, NULL, FALSE
     //); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-invalidaterect
     //UpdateWindow(
