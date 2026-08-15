@@ -37,8 +37,7 @@ cmake . -B build -G "Unix Makefiles"
 
 Build:
 ```
-make -C build VERBOSE=1
-./build/handmade_hero`
+make -C build VERBOSE=1 && ./build/handmade_hero`
 ```
 
 ### compile_commands.json
