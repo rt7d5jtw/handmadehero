@@ -15,8 +15,7 @@ Alternative: `C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\To
 
 You can just run:
 ```
-\build.bat
-.\out\main.exe
+.\build.bat && .\out\main.exe
 `````
 
 Generate Visual Studio project files for x64:
