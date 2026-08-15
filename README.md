@@ -15,7 +15,7 @@ Windows:
   You can just run: `\build.bat`, but note that this builds executable to: `.\out\main.exe`.
   Alternative with CMake:
   1. `cmake -S . -B build -G "Visual Studio 17 2022" -A x64`
-  2. `cmake --build .\build --target ALL_BUILD --config Debug`
+  2. `cmake --build build --config Debug`
   3. `.\build\Debug\handmade_hero.exe`
 
 Linux:
