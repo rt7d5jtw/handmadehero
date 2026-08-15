@@ -20,13 +20,15 @@ You can just run:
 
 Generate Visual Studio project files for x64:
 ```
-c.make -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 ```
 
 Build:
 ```
 cmake --build build --config Debug && .\build\Debug\handmade_hero.exe
 ```
+
+### Linux or BSD
 
 Generate Makefiles:
 ```
