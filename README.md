@@ -4,7 +4,7 @@
 
 You can just run:
 ```
-.\build.bat && .\out\main.exe
+.\build.bat && .\build\Debug\handmadehero.exe
 `````
 
 Generate Visual Studio project files for x64:
