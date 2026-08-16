@@ -301,8 +301,11 @@ BitmapImage read_bmp_file(char* filepath)
 #endif
 
 #if defined(_WIN32)
-    // VirtualALloc https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc
-    bmp_image.data = (u8*)VirtualAlloc(0, bmp_image.header.image_size, MEM_COMMIT, PAGE_READWRITE);
+    // VirtualALloc
+    // https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc
+    bmp_image.data = (u8*)VirtualAlloc(
+        0, bmp_image.header.image_size, MEM_COMMIT, PAGE_READWRITE
+    );
 
     if (bmp_image.data == NULL) {
       GetLastError();
@@ -337,22 +340,22 @@ BitmapImage read_bmp_file(char* filepath)
     fwrite(&bmp_image.header, sizeof(BitmapHeader), 1, new_bmp_file);
     fwrite(bmp_image.data, bmp_image.header.image_size, 1, new_bmp_file);
 
-    u8* data = (u8 *)malloc(sizeof(u32));
+    u8* data = (u8*)malloc(sizeof(u32));
 
     // #b48ead / rgb(180, 142, 173)
-    data[0] = 0xb4;   // Red
-    data[1] = 0x8e;   // Blue
-    data[2] = 0xad;   // Green
+    data[0] = 0xb4; // Red
+    data[1] = 0x8e; // Blue
+    data[2] = 0xad; // Green
     data[3] = 0x0;
 
     write_bmp_file(
-      "test_file.bmp",
-      bmp_image.header.filesize,
-      bmp_image.header.offset,
-      bmp_image.header.image_width,
-      bmp_image.header.image_height,
-      bmp_image.header.image_size,
-      data
+        "test_file.bmp",
+        bmp_image.header.filesize,
+        bmp_image.header.offset,
+        bmp_image.header.image_width,
+        bmp_image.header.image_height,
+        bmp_image.header.image_size,
+        data
     );
 
     // for (u8 i = 0; i < 192; i += 1) {
