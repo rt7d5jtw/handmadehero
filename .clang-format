@@ -19,7 +19,6 @@ BinPackParameters: false
 AlignAfterOpenBracket: BlockIndent
 AlignConsecutiveMacros: true
 AlignConsecutiveAssignments: true
-AlignTrailingComments: true
 AlignConsecutiveDeclarations: false
 AlignOperands: true
 AllowShortBlocksOnASingleLine: true
@@ -29,3 +28,5 @@ KeepEmptyLinesAtTheStartOfBlocks: false
 SortIncludes: false
 SpaceAfterCStyleCast: false
 AllowAllParametersOfDeclarationOnNextLine: false
+ReflowComments: false
+AlignTrailingComments: Leave
