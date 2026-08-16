@@ -1,9 +1,10 @@
 /* vi: foldmethod=marker
  */
 
-#include <stdio.h>
-#include <stdbool.h>
 #include <assert.h>
+#include <stdbool.h>
+#include <stdio.h>
+
 #include "base.h"
 
 global u32 active_prng_seed = 123456789;
@@ -25,8 +26,8 @@ u32 xorshift32(void)
 
 #if defined(_WIN32) // Windows code {{{
 
-#define _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_DEPRECATE
+#  define _CRT_SECURE_NO_WARNINGS
+#  define _CRT_SECURE_NO_DEPRECATE
 
 #  ifndef UNICODE
 #    define UNICODE
@@ -35,10 +36,14 @@ u32 xorshift32(void)
 #  include <windows.h>
 #  include <xinput.h>
 
-#ifdef DEBUG
+#  ifdef DEBUG
 
-#  define MACRO_STMT(__stmt__) do { __stmt__ } while (0)
-#  define __TO_STR(str) #str
+#    define MACRO_STMT(__stmt__) \
+      do                         \
+      {                          \
+        __stmt__                 \
+      } while (0)
+#    define __TO_STR(str) #str
 
 /*
   TCHAR         - _stprintf - OutputDebugString
@@ -47,13 +52,14 @@ u32 xorshift32(void)
 */
 
 // debug print macro for win32
-#  define __win32_debug_print(argname, argvalue) MACRO_STMT( \
-    char dbg_msg[255] = {0};                                 \
-    sprintf(dbg_msg, __TO_STR(argname)" -> %d\n", argvalue); \
-    OutputDebugStringA(dbg_msg);                             \
-  )
+#    define __win32_debug_print(argname, argvalue)                  \
+      MACRO_STMT(                                                   \
+          char dbg_msg[255] = {0};                                  \
+          sprintf(dbg_msg, __TO_STR(argname) " -> %d\n", argvalue); \
+          OutputDebugStringA(dbg_msg);                              \
+      )
 
-#endif
+#  endif
 
 #  define WINDOW_WIDTH  1480
 #  define WINDOW_HEIGHT 860
@@ -80,9 +86,7 @@ struct Win32_OffscreenBuffer {
   HDC frame_device_context;
 };
 
-struct Win32_OffscreenBuffer win32_offscreen_buffer = {
-  .bytes_per_pixel = 4
-};
+struct Win32_OffscreenBuffer win32_offscreen_buffer = {.bytes_per_pixel = 4};
 static int client_width;
 
 typedef struct Win32WindowDimensions Win32WindowDimensions;
@@ -91,23 +95,21 @@ struct Win32WindowDimensions {
   u32 height;
 };
 
-#define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
+#  define X_INPUT_GET_STATE(name) \
+    DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE* pState)
 typedef X_INPUT_GET_STATE(x_input_get_state);
 X_INPUT_GET_STATE(XInputGetStateStub)
-{
-  return ERROR_DEVICE_NOT_CONNECTED;
-}
-global x_input_get_state *XInputGetState_ = XInputGetStateStub;
-#define XInputGetState XInputGetState_
+{ return ERROR_DEVICE_NOT_CONNECTED; }
+global x_input_get_state* XInputGetState_ = XInputGetStateStub;
+#  define XInputGetState XInputGetState_
 
-#define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
+#  define X_INPUT_SET_STATE(name) \
+    DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
 typedef X_INPUT_SET_STATE(x_input_set_state);
 X_INPUT_SET_STATE(XInputSetStateStub)
-{
-  return ERROR_DEVICE_NOT_CONNECTED;
-}
-global x_input_get_state *XInputSetState_ = XInputSetStateStub;
-#define XInputSetState XInputSetState_
+{ return ERROR_DEVICE_NOT_CONNECTED; }
+global x_input_get_state* XInputSetState_ = XInputSetStateStub;
+#  define XInputSetState XInputSetState_
 
 internal void win32_load_xinput(void)
 {
@@ -123,15 +125,24 @@ internal void win32_load_xinput(void)
 
   if (xInputLibrary)
   {
-    XInputGetState = (x_input_get_state *)GetProcAddress(xInputLibrary, "XInputGetState");
-    if (!XInputGetState) { XInputGetState = XInputGetStateStub; }
+    XInputGetState =
+        (x_input_get_state*)GetProcAddress(xInputLibrary, "XInputGetState");
+    if (!XInputGetState)
+    {
+      XInputGetState = XInputGetStateStub;
+    }
 
-    XInputSetState = (x_input_set_state *)GetProcAddress(xInputLibrary, "XInputSetState");
-    if (!XInputSetState) { XInputSetState = XInputSetStateStub; }
+    XInputSetState =
+        (x_input_set_state*)GetProcAddress(xInputLibrary, "XInputSetState");
+    if (!XInputSetState)
+    {
+      XInputSetState = XInputSetStateStub;
+    }
   }
 }
 
-internal Win32WindowDimensions win32_get_window_dimensions(HWND window_handle) {
+internal Win32WindowDimensions win32_get_window_dimensions(HWND window_handle)
+{
   Win32WindowDimensions dims = {0};
   RECT client_rect;
   GetClientRect(window_handle, &client_rect);
@@ -142,29 +153,30 @@ internal Win32WindowDimensions win32_get_window_dimensions(HWND window_handle) {
   return dims;
 }
 
-void draw_snow(
-  u32* bitmap_memory,
-  u32 bitmap_width,
-  u32 bitmap_height
-)
+void draw_snow(u32* bitmap_memory, u32 bitmap_width, u32 bitmap_height)
 {
   assert(bitmap_memory != NULL && "GDI Bitmap memory buffer must not be null!");
-  assert(bitmap_width > 0 && bitmap_height > 0 && "GDI Bitmap dimensions must be greater than zero!");
+  assert(
+      bitmap_width > 0 && bitmap_height > 0 &&
+      "GDI Bitmap dimensions must be greater than zero!"
+  );
 
-  u32 pitch  = bitmap_width * 4;
-  u8* row    = (u8*)bitmap_memory;
+  u32 pitch = bitmap_width * 4;
+  u8* row   = (u8*)bitmap_memory;
 
-  for (u32 y = 0; y < bitmap_height; ++y) {
+  for (u32 y = 0; y < bitmap_height; ++y)
+  {
     u32* pixel = (u32*)row;
 
-    for (u32 x = 0; x < bitmap_width; ++x) {
+    for (u32 x = 0; x < bitmap_width; ++x)
+    {
       u32 bits = xorshift32();
       u8 noise = (u8)(bits & (bits >> 8)) & (bits >> 16);
 
-      u8 blue   = noise;
-      u8 green  = noise;
-      u8 red    = noise;
-      u8 alpha  = 0;
+      u8 blue  = noise;
+      u8 green = noise;
+      u8 red   = noise;
+      u8 alpha = 0;
 
       // Pack channels into BGRA
       u32 packed_channels = (alpha << 24) | (red << 16) | (green << 8) | blue;
@@ -189,79 +201,105 @@ void draw_random_gradient(
 )
 {
   assert(bitmap_memory != NULL && "GDI Bitmap memory buffer must not be null!");
-  assert(bitmap_width > 0 && bitmap_height > 0 && "GDI Bitmap dimensions must be greater than zero!");
+  assert(
+      bitmap_width > 0 && bitmap_height > 0 &&
+      "GDI Bitmap dimensions must be greater than zero!"
+  );
 
-  /* stride or pitch: the total number of bytes in one horizontal line of the bitmap */
+  /* stride or pitch: the total number of bytes in one horizontal line of the
+   * bitmap */
   u32 pitch = bitmap_width * win32_offscreen_buffer.bytes_per_pixel;
   /* pointer to the first byte of the current row being processed */
-  u8* row   = (u8*)bitmap_memory;
+  u8* row = (u8*)bitmap_memory;
 
   /* Iterate through each row (y-coordinate) */
-  for (u32 y = 0; y < bitmap_height; ++y) {
+  for (u32 y = 0; y < bitmap_height; ++y)
+  {
     // first byte of the current pixel in the row
     u32* pixel = (u32*)row;
     /* Iterate through each pixel in the current row (x-coordinate) */
-    for (u32 x = 0; x < bitmap_width; ++x) {
+    for (u32 x = 0; x < bitmap_width; ++x)
+    {
       // Blue channel
-      u8 blue  = (u8)(x + x_offset);
+      u8 blue = (u8)(x + x_offset);
       // Green channel
       u8 green = (u8)(y + y_offset);
       // Red channel
-      u8 red   = 0;
+      u8 red = 0;
       // Alpha channel
       u8 alpha = 0;
 
       // pack all four channels into the u32 in BGRA order
       u32 packed_colors = (alpha << 24) | (red << 16) | (green << 8) | blue;
 
-      // Write all the color channels for the pixel for this byte, and advance the 4-byte pointer.
-      // NOTE: post-increment pixel++, after the assignment is complete, advance the pixel pointer to the next memory location.
+      // Write all the color channels for the pixel for this byte, and advance
+      // the 4-byte pointer. NOTE: post-increment pixel++, after the assignment
+      // is complete, advance the pixel pointer to the next memory location.
       *pixel++ = packed_colors;
     }
 
     // Move the row pointer down by the pitch (stride) to start the next row
-    row += pitch;//win32_offscreen_buffer.pitch;
+    row += pitch; // win32_offscreen_buffer.pitch;
   }
 }
 
 typedef wchar_t wchar;
 
-void draw_pixel(int x, int y, u32 color) {
-#ifdef DEBUG
+void draw_pixel(int x, int y, u32 color)
+{
+#  ifdef DEBUG
   __win32_debug_print(x, x);
   __win32_debug_print(y, y);
-#endif
+#  endif
 
   u32* pixel = win32_offscreen_buffer.pixels;
   pixel += y * win32_offscreen_buffer.width + x;
   *pixel = color;
 }
 
-/* frees previous bitmap, allocates a new bitmap buffer, initializes and sets it up */
-internal void win32_resize_dib_section(Win32_OffscreenBuffer* offscreen_buffer, int width, int height)
+/* frees previous bitmap, allocates a new bitmap buffer, initializes and sets it
+ * up */
+internal void win32_resize_dib_section(
+    Win32_OffscreenBuffer* offscreen_buffer,
+    int width,
+    int height
+)
 {
-  if (offscreen_buffer->pixels) { VirtualFree(offscreen_buffer->pixels, 0, MEM_RELEASE); }
+  if (offscreen_buffer->pixels)
+  {
+    VirtualFree(offscreen_buffer->pixels, 0, MEM_RELEASE);
+  }
 
-  offscreen_buffer->width = width;
-  offscreen_buffer->height = height;
+  offscreen_buffer->width           = width;
+  offscreen_buffer->height          = height;
   offscreen_buffer->bytes_per_pixel = 4;
 
-  offscreen_buffer->info.bmiHeader.biSize = sizeof(offscreen_buffer->info.bmiHeader);
+  offscreen_buffer->info.bmiHeader.biSize =
+      sizeof(offscreen_buffer->info.bmiHeader);
   offscreen_buffer->info.bmiHeader.biWidth = offscreen_buffer->width;
-  offscreen_buffer->info.bmiHeader.biHeight = -cast(s32)(offscreen_buffer->height);
-  offscreen_buffer->info.bmiHeader.biPlanes = 1;
-  offscreen_buffer->info.bmiHeader.biBitCount = 32;
+  offscreen_buffer->info.bmiHeader.biHeight =
+      -cast(s32)(offscreen_buffer->height);
+  offscreen_buffer->info.bmiHeader.biPlanes      = 1;
+  offscreen_buffer->info.bmiHeader.biBitCount    = 32;
   offscreen_buffer->info.bmiHeader.biCompression = BI_RGB;
 
-  int bitmap_memory_size = offscreen_buffer->bytes_per_pixel * (offscreen_buffer->width * offscreen_buffer->height);
+  int bitmap_memory_size = offscreen_buffer->bytes_per_pixel *
+                           (offscreen_buffer->width * offscreen_buffer->height);
 
-  offscreen_buffer->pixels = VirtualAlloc(0, bitmap_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  offscreen_buffer->pixels = VirtualAlloc(
+      0, bitmap_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE
+  );
 }
 
-internal void win32_resize_bitmap(Win32_OffscreenBuffer* offscreen_buffer, LPARAM lParam)
+internal void
+win32_resize_bitmap(Win32_OffscreenBuffer* offscreen_buffer, LPARAM lParam)
 {
   offscreen_buffer->info.bmiHeader.biWidth  = LOWORD(lParam);
-  offscreen_buffer->info.bmiHeader.biHeight = -HIWORD(lParam); // DIBs are based in a coordinate system that is upside down relative to Windows, source: https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
+  offscreen_buffer->info.bmiHeader.biHeight = -HIWORD(
+      lParam
+  ); // DIBs are based in a coordinate system that is upside down
+  // relative to Windows, source:
+  // https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
 
   // Delete already existing bitmap
   if (offscreen_buffer->bitmap_handle)
@@ -272,40 +310,46 @@ internal void win32_resize_bitmap(Win32_OffscreenBuffer* offscreen_buffer, LPARA
 
   // hdc      - Handle to a device context.
   // pbmi     - Pointer to bitmap info.
-  // usage    - type of data contained in the bmiColors array member of the BITMAPINFO structure pointed to by pbmi.
-  // ppvBits  - a pointer to a variable that receives a pointer ot the location of the DIB bit values.
-  // hSection - a handle to a file-mapping object that hte function will use to create the DIB.
-  // offset   - the offset form the beginning of the file-mapping object referenced by hSection where storage for the bitmap bit values is to begin.
+  // usage    - type of data contained in the bmiColors array member of the
+  // BITMAPINFO structure pointed to by pbmi. ppvBits  - a pointer to a variable
+  // that receives a pointer ot the location of the DIB bit values. hSection - a
+  // handle to a file-mapping object that hte function will use to create the
+  // DIB. offset   - the offset form the beginning of the file-mapping object
+  // referenced by hSection where storage for the bitmap bit values is to begin.
   offscreen_buffer->bitmap_handle = CreateDIBSection(
       NULL,
       &offscreen_buffer->info,
       DIB_RGB_COLORS,
-      (
-          void**
-      )&offscreen_buffer->pixels,
+      (void**)&offscreen_buffer->pixels,
       0,
       0
   );
 
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject
   // point device context to the bitmap
-  SelectObject(offscreen_buffer->frame_device_context, offscreen_buffer->bitmap_handle);
+  SelectObject(
+      offscreen_buffer->frame_device_context, offscreen_buffer->bitmap_handle
+  );
 
   offscreen_buffer->width  = LOWORD(lParam);
   offscreen_buffer->height = HIWORD(lParam);
 }
 
-internal void win32_paint_bitmap(HWND window_handle, PAINTSTRUCT paint, HDC device_context)
+internal void
+win32_paint_bitmap(HWND window_handle, PAINTSTRUCT paint, HDC device_context)
 {
   device_context = BeginPaint(
-      window_handle, &paint
+      window_handle,
+      &paint
   ); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
 
-  // NOTE: origin (0,0) is conventionally located at the top-left corner for Windows GDI.
+  // NOTE: origin (0,0) is conventionally located at the top-left corner for
+  // Windows GDI.
 
   /* https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
    * Painting function to copy the pixel array over to the window in the
-   * specified rectangle. Performs a bit-block transfer between two device contexts.
+   * specified rectangle. Performs a bit-block transfer between two device
+   * contexts.
    */
   BitBlt(
       /* destination device context */
@@ -328,31 +372,40 @@ internal void win32_paint_bitmap(HWND window_handle, PAINTSTRUCT paint, HDC devi
   );
 
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
-  EndPaint(
-      window_handle, &paint
-  );
+  EndPaint(window_handle, &paint);
 }
 
-
-internal void win32_display_buffer_in_window(Win32_OffscreenBuffer* buffer, HDC device_context, u32 width, u32 height)
+internal void win32_display_buffer_in_window(
+    Win32_OffscreenBuffer* buffer,
+    HDC device_context,
+    u32 width,
+    u32 height
+)
 {
   /*
-   * Copies Device-Independent Bitmap (DIB) (an pixel array) over to destination bitmap.
-   * has stretching and compressing capabilities.
+   * Copies Device-Independent Bitmap (DIB) (an pixel array) over to destination
+   * bitmap. has stretching and compressing capabilities.
    */
-  StretchDIBits(device_context,
-                /*
-                 * xDest, yDest, destWidth, destHeight
-                 * xSrc,  ySrc,  srcWidth,  srcHeight
-                 */
-                0, 0, width, height,
-                0, 0, buffer->width, buffer->height,
-                /* Source DIB bits (the raw pixel array) */
-                buffer->pixels,
-                /* Pointer to the BITMAPINFO structure for pixel format */
-                &buffer->info,
-                DIB_RGB_COLORS,
-                SRCCOPY
+  StretchDIBits(
+      device_context,
+      /*
+       * xDest, yDest, destWidth, destHeight
+       * xSrc,  ySrc,  srcWidth,  srcHeight
+       */
+      0,
+      0,
+      width,
+      height,
+      0,
+      0,
+      buffer->width,
+      buffer->height,
+      /* Source DIB bits (the raw pixel array) */
+      buffer->pixels,
+      /* Pointer to the BITMAPINFO structure for pixel format */
+      &buffer->info,
+      DIB_RGB_COLORS,
+      SRCCOPY
   );
 }
 
@@ -376,8 +429,8 @@ int WINAPI WinMain(
     int nCmdShow
 )
 {
-  (void) pCmdLine;
-  (void) hPrevInstance;
+  (void)pCmdLine;
+  (void)hPrevInstance;
 
   // WNDCLASS
   // https://learn.microsoft.com/en-us/previous-versions/ms942860(v=msdn.10)
@@ -393,7 +446,7 @@ int WINAPI WinMain(
   wchar_t const window_class_name[] = L"Sample Window Class";
 
   HWND window_handle = NULL;
-  static MSG msg    = {0};
+  static MSG msg     = {0};
 
   win32_resize_dib_section(&win32_offscreen_buffer, 1280, 720);
 
@@ -411,7 +464,8 @@ int WINAPI WinMain(
   windowClass.lpszMenuName  = NULL;
   windowClass.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
 
-  if (!RegisterClassEx(&windowClass)) {
+  if (!RegisterClassEx(&windowClass))
+  {
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebox
     MessageBox(
         window_handle,
@@ -435,7 +489,8 @@ int WINAPI WinMain(
       1; // the number of planes for the target device, must be set to 1
   win32_offscreen_buffer.info.bmiHeader.biBitCount =
       32; // the number of of bits per pixel (bpp)
-  win32_offscreen_buffer.info.bmiHeader.biCompression = BI_RGB; // uncompressed RGB format
+  win32_offscreen_buffer.info.bmiHeader.biCompression =
+      BI_RGB; // uncompressed RGB format
 
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createcompatibledc
   win32_offscreen_buffer.frame_device_context = CreateCompatibleDC(0);
@@ -470,12 +525,13 @@ int WINAPI WinMain(
       lp_param
   );
 
-  if (window_handle == NULL) {
+  if (window_handle == NULL)
+  {
     MessageBox(
-      window_handle,
-      L"Window Creation Failed!",
-      L"Error!",
-      MB_ICONEXCLAMATION | MB_OK
+        window_handle,
+        L"Window Creation Failed!",
+        L"Error!",
+        MB_ICONEXCLAMATION | MB_OK
     );
     return GetLastError();
   }
@@ -491,14 +547,17 @@ int WINAPI WinMain(
   u32 x_offset = 0;
   u32 y_offset = 0;
 
-  while (running) {
+  while (running)
+  {
     HDC device_context = GetDC(window_handle);
 
     // Run the message loop
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-peekmessagew
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-dispatchmessagea
-    while (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE)) {
-      if (msg.message == WM_QUIT) {
+    while (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE))
+    {
+      if (msg.message == WM_QUIT)
+      {
         running = false;
       }
 
@@ -507,13 +566,14 @@ int WINAPI WinMain(
     }
 
     // Xinput API
-    for (DWORD controllerIndex = 0; controllerIndex < XUSER_MAX_COUNT; controllerIndex += 1)
+    for (DWORD controllerIndex = 0; controllerIndex < XUSER_MAX_COUNT;
+         controllerIndex += 1)
     {
       XINPUT_STATE controllerState;
       if (XInputGetState(controllerIndex, &controllerState) == ERROR_SUCCESS)
       {
         // Controller is plugged in
-        XINPUT_GAMEPAD *pad = &controllerState.Gamepad;
+        XINPUT_GAMEPAD* pad = &controllerState.Gamepad;
 
         bool up           = pad->wButtons & XINPUT_GAMEPAD_DPAD_UP;
         bool down         = pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
@@ -535,25 +595,34 @@ int WINAPI WinMain(
         {
           y_offset += 2;
         }
-
-      } else {
+      }
+      else
+      {
         // Controller is not available
       }
 
       // test xinput vibration
-      //XINPUT_VIBRATION xinput_vibration;
-      //xinput_vibration.wLeftMotorSpeed  = 60000;
-      //xinput_vibration.wRightMotorSpeed = 60000;
-      //XInputSetState(0, &xinput_vibration);
+      // XINPUT_VIBRATION xinput_vibration;
+      // xinput_vibration.wLeftMotorSpeed  = 60000;
+      // xinput_vibration.wRightMotorSpeed = 60000;
+      // XInputSetState(0, &xinput_vibration);
     }
 
     // GDI Drawing logic {{{
 
-    //draw_random_gradient(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset, y_offset);
-    draw_snow(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height);
+    // draw_random_gradient(win32_offscreen_buffer.pixels,
+    // win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset,
+    // y_offset);
+    draw_snow(
+        win32_offscreen_buffer.pixels,
+        win32_offscreen_buffer.width,
+        win32_offscreen_buffer.height
+    );
 
     Win32WindowDimensions dims = win32_get_window_dimensions(window_handle);
-    win32_display_buffer_in_window(&win32_offscreen_buffer, device_context, dims.width, dims.height);
+    win32_display_buffer_in_window(
+        &win32_offscreen_buffer, device_context, dims.width, dims.height
+    );
 
     ReleaseDC(window_handle, device_context);
 
@@ -569,13 +638,15 @@ int WINAPI WinMain(
      the window whenever we want rather than waiting for Windows to tell us to.
     */
 
-    //InvalidateRct(
-    //    window_handle, NULL, FALSE
-    //); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-invalidaterect
-    //UpdateWindow(
-    //    window_handle
-    //); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatewindow
-    // }}}
+    // InvalidateRct(
+    //     window_handle, NULL, FALSE
+    //); //
+    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-invalidaterect
+    // UpdateWindow(
+    //     window_handle
+    //); //
+    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatewindow
+    //  }}}
   }
 
   return msg.wParam;
@@ -588,81 +659,70 @@ internal LRESULT CALLBACK
 win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   LRESULT result = 0;
-  switch (msg) {
+  switch (msg)
+  {
     case WM_KEYDOWN: {
-      switch (wParam) {
+      switch (wParam)
+      {
         // Close window from 'Q'
         case 'Q': {
           DestroyWindow(window_handle);
         }
       }
-    } break;
+    }
+    break;
     case WM_QUIT:
     case WM_DESTROY: {
       running = false;
-    } break;
+    }
+    break;
     case WM_SYSKEYDOWN:
     case WM_SYSKEYUP:
     case WM_KEYDOWN:
-    case WM_KEYUP:
-    {
+    case WM_KEYUP: {
       // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
-      u32 vkCode = wParam;
+      u32 vkCode   = wParam;
       bool wasDown = ((lParam & (1 << 30)) != 0);
-      bool isDown = ((lParam & (1 << 31)) == 0);
+      bool isDown  = ((lParam & (1 << 31)) == 0);
 
       if (wasDown != isDown)
       {
         if (vkCode == 'W')
         {
-            OutputDebugStringA("W\n");
+          OutputDebugStringA("W\n");
         }
         else if (vkCode == 'A')
         {
-            OutputDebugStringA("A\n");
+          OutputDebugStringA("A\n");
         }
         else if (vkCode == 'S')
         {
-            OutputDebugStringA("S\n");
+          OutputDebugStringA("S\n");
         }
         else if (vkCode == 'D')
         {
-            OutputDebugStringA("D\n");
+          OutputDebugStringA("D\n");
         }
-        else if (vkCode == 'Q')
-        {
-        }
-        else if (vkCode == 'E')
-        {
-        }
-        else if (vkCode == VK_UP)
-        {
-        }
-        else if (vkCode == VK_DOWN)
-        {
-        }
-        else if (vkCode == VK_LEFT)
-        {
-        }
-        else if (vkCode == VK_RIGHT)
-        {
-        }
+        else if (vkCode == 'Q') {}
+        else if (vkCode == 'E') {}
+        else if (vkCode == VK_UP) {}
+        else if (vkCode == VK_DOWN) {}
+        else if (vkCode == VK_LEFT) {}
+        else if (vkCode == VK_RIGHT) {}
         else if (vkCode == VK_ESCAPE)
         {
           OutputDebugStringA("ESCAPE: ");
           if (isDown)
           {
-              OutputDebugStringA("isDown ");
+            OutputDebugStringA("isDown ");
           }
           if (wasDown)
           {
-              OutputDebugStringA("wasDown");
+            OutputDebugStringA("wasDown");
           }
           OutputDebugStringA("\n");
         }
-        else if (vkCode == VK_SPACE)
-        {
-        }
+        else if (vkCode == VK_SPACE) {}
         b32 altKeyWasDown = ((lParam & (1 << 29)) != 0);
         if ((vkCode == VK_F4) && altKeyWasDown)
         {
@@ -670,19 +730,19 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
         }
       }
     }
-    //case WM_LBUTTONUP: {
-    //    int x = GetlParamX(lParam);
-    //    int y = GetlParamY(lParam);
-    //    u32 color = 0xffffff;
-    //    draw_pixel(x, y, color);
-    //} break;
-    //case WM_MOUSEMOVE: {
-    //  if (wParam == MK_LBUTTON) {
-    //    int x = GetlParamX(lParam);
-    //    int y = GetlParamY(lParam);
-    //    u32 color = 0xffffff;
-    //    draw_pixel(x, y, color);
-    //  }
+    // case WM_LBUTTONUP: {
+    //     int x = GetlParamX(lParam);
+    //     int y = GetlParamY(lParam);
+    //     u32 color = 0xffffff;
+    //     draw_pixel(x, y, color);
+    // } break;
+    // case WM_MOUSEMOVE: {
+    //   if (wParam == MK_LBUTTON) {
+    //     int x = GetlParamX(lParam);
+    //     int y = GetlParamY(lParam);
+    //     u32 color = 0xffffff;
+    //     draw_pixel(x, y, color);
+    //   }
 
     //} break;
     // GDI Drawing logic {{{
@@ -697,13 +757,19 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
       HDC device_context = BeginPaint(window_handle, &paint);
 
       Win32WindowDimensions dims = win32_get_window_dimensions(window_handle);
-      win32_display_buffer_in_window(&win32_offscreen_buffer, device_context, dims.width, dims.height);
+      win32_display_buffer_in_window(
+          &win32_offscreen_buffer, device_context, dims.width, dims.height
+      );
 
       EndPaint(window_handle, &paint);
-    } break;
+    }
+    break;
     // Set the size of the pixel array and finish setting up GDI bitmap
-    //case WM_SIZE: {
-    //  // NOTE: When the biHeight field is negative, this is the clue to Windows to treat this bitmap as top-down, instead of bottom-up, meaning that the first three bytes of the image are the color for the top left pixel in the bitmap, not the bottom left.
+    // case WM_SIZE: {
+    //  // NOTE: When the biHeight field is negative, this is the clue to
+    //  Windows to treat this bitmap as top-down, instead of bottom-up, meaning
+    //  that the first three bytes of the image are the color for the top left
+    //  pixel in the bitmap, not the bottom left.
 
     //  /*
     //  RECT client_rect;
@@ -729,34 +795,31 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 
 #if defined(__linux__)
 
-#  include <stdio.h>
-#  include <unistd.h>
-#  include <sys/syscall.h>
-#  include <sys/mman.h>
-#  include <stdbool.h>
 #  include <X11/Xlib.h>
-#  include <X11/keysym.h>
 #  include <X11/Xutil.h>
+#  include <X11/keysym.h>
+#  include <stdbool.h>
+#  include <stdio.h>
+#  include <sys/mman.h>
+#  include <sys/syscall.h>
+#  include <unistd.h>
 
 #  include "bmp.h"
 
-bool keyboard[256]  = {0};
+bool keyboard[256]               = {0};
 global usize current_buffer_size = 0;
-global bool running = true;
+global bool running              = true;
 
 /* GUI MODE:
  * 0 -> "draw gradient mode"
  * 1 -> "draw white background for drawing"
  */
-enum GUI_MODE {
-  MODE_GRADIENT_ANIMATION = 0,
-  MODE_DRAWING            = 1
-};
+enum GUI_MODE { MODE_GRADIENT_ANIMATION = 0, MODE_DRAWING = 1 };
 
 global enum GUI_MODE current_gui_mode = MODE_GRADIENT_ANIMATION;
 
-#  define WINDOW_WIDTH  1480
-#  define WINDOW_HEIGHT 860
+#  define WINDOW_WIDTH    1480
+#  define WINDOW_HEIGHT   860
 #  define BYTES_PER_PIXEL 4 // 4 bytes for 32-bit color depth (e.g. BGRA)
 
 #  define DARK_GREEN 0x8aa37f
@@ -766,32 +829,32 @@ global enum GUI_MODE current_gui_mode = MODE_GRADIENT_ANIMATION;
 #  define WHITE      0xffffff
 #  define BLACK      0x000000
 
-void x11_clear_buffer(XImage* image, u64 color) {
-  if (!image) return;
+void x11_clear_buffer(XImage* image, u64 color)
+{
+  if (!image)
+    return;
 
   int width        = image->width;
   int height       = image->height;
-  u8* buffer_start = (u8*) image->data;
+  u8* buffer_start = (u8*)image->data;
   int pitch        = image->bytes_per_line;
 
-  for (int y = 0; y < height; ++y) {
+  for (int y = 0; y < height; ++y)
+  {
     u32* pixel = (u32*)(buffer_start + (y * pitch));
-    for (int x = 0; x < width; ++x) {
+    for (int x = 0; x < width; ++x)
+    {
       *pixel++ = color;
     }
   }
 }
 
-void x11_render_buffer(Display* display, Window window, GC gc, XImage* image) {
-  if (image && display && window && gc) {
+void x11_render_buffer(Display* display, Window window, GC gc, XImage* image)
+{
+  if (image && display && window && gc)
+  {
     XPutImage(
-      display,
-      window,
-      gc,
-      image,
-      0, 0, 0, 0 ,
-      image->width,
-      image->height
+        display, window, gc, image, 0, 0, 0, 0, image->width, image->height
     );
     XFlush(display);
   }
@@ -799,17 +862,22 @@ void x11_render_buffer(Display* display, Window window, GC gc, XImage* image) {
 
 void draw_snow(XImage* image)
 {
-  assert(image != NULL && image->data != NULL && "XImage and XImage buffer must not be null");
+  assert(
+      image != NULL && image->data != NULL &&
+      "XImage and XImage buffer must not be null"
+  );
 
   int height       = image->height;
   int width        = image->width;
   int pitch        = image->bytes_per_line;
-  u8* buffer_start = (u8*) image->data;
+  u8* buffer_start = (u8*)image->data;
 
-  for (int y = 0; y < height; y += 1) {
-    u32* pixel = (u32 *)(buffer_start + (y * pitch));
+  for (int y = 0; y < height; y += 1)
+  {
+    u32* pixel = (u32*)(buffer_start + (y * pitch));
 
-    for (int x = 0; x < width; x += 1) {
+    for (int x = 0; x < width; x += 1)
+    {
       u32 bits = xorshift32();
       u8 noise = (u8)(bits & (bits >> 8)) & (bits >> 16);
 
@@ -819,37 +887,38 @@ void draw_snow(XImage* image)
       u8 alpha = 0;
 
       u32 packed_channels = (alpha << 24) | (red << 16) | (green << 8) | blue;
-      *pixel++ = packed_channels;
+      *pixel++            = packed_channels;
     }
   }
 }
 
-void draw_random_gradient(
-    u64 x_offset,
-    u64 y_offset,
-    XImage* image
-)
+void draw_random_gradient(u64 x_offset, u64 y_offset, XImage* image)
 {
-  assert(image != NULL && image->data != NULL && "XImage and XImage buffer must not be null");
+  assert(
+      image != NULL && image->data != NULL &&
+      "XImage and XImage buffer must not be null"
+  );
 
-  int height       = image->height;
-  int width        = image->width;
+  int height = image->height;
+  int width  = image->width;
   // get stride (pitch) from the XImage struct
   int pitch        = image->bytes_per_line;
-  u8* buffer_start = (u8*) image->data;
+  u8* buffer_start = (u8*)image->data;
 
-  for (int y = 0; y < height; y += 1) {
+  for (int y = 0; y < height; y += 1)
+  {
     // calculate the starting address of the current row
-    u32* pixel = (u32 *)(buffer_start + (y * pitch));
-    for (int x = 0; x < width; x += 1) {
-
+    u32* pixel = (u32*)(buffer_start + (y * pitch));
+    for (int x = 0; x < width; x += 1)
+    {
       // PIXEL COLOR CALCULATION
       u8 blue  = 150 + (u8)((x + y_offset) % 100);
-      u8 green = 50  + (u8)((y + x_offset) % 100);
+      u8 green = 50 + (u8)((y + x_offset) % 100);
       u8 red   = 25 + (u8)(x - x_offset);
       u8 alpha = 0;
 
-      // NOTE: explicitly packing 32-bits, BGRA/BGR packing assumed, X11's byte order can vary.
+      // NOTE: explicitly packing 32-bits, BGRA/BGR packing assumed, X11's byte
+      // order can vary.
       u32 packed_colors = (alpha << 24) | (red << 16) | (green << 8) | blue;
       // direct memory write
       *pixel++ = packed_colors;
@@ -857,17 +926,19 @@ void draw_random_gradient(
   }
 }
 
-void x11_draw_pixel(XImage * image, int x, int y, u64 color) {
-  if (!image || x < 0 || y < 0 || x >= image->width || y >= image->height) {
+void x11_draw_pixel(XImage* image, int x, int y, u64 color)
+{
+  if (!image || x < 0 || y < 0 || x >= image->width || y >= image->height)
+  {
     return; // bounds check
   }
 
   u8* buffer_start = (u8*)image->data;
   int pitch        = image->bytes_per_line;
   // calculate memory offset for 32 bit format
-  u32* pixel       = (u32*)(buffer_start + (y * pitch) + (x * BYTES_PER_PIXEL));
+  u32* pixel = (u32*)(buffer_start + (y * pitch) + (x * BYTES_PER_PIXEL));
   // direct write to memory
-  *pixel           = (u32)color;
+  *pixel = (u32)color;
 }
 
 GC create_x11_graphics_context(
@@ -892,10 +963,13 @@ GC create_x11_graphics_context(
   //   fprintf(stderr, "XCreatedGC: \n");
   // }
 
-  if (reverse_video) {
+  if (reverse_video)
+  {
     XSetForeground(display, gc, WhitePixel(display, screen_num));
     XSetBackground(display, gc, WhitePixel(display, screen_num));
-  } else {
+  }
+  else
+  {
     XSetForeground(display, gc, BlackPixel(display, screen_num));
     XSetBackground(display, gc, WhitePixel(display, screen_num));
   }
@@ -913,11 +987,11 @@ GC create_x11_graphics_context(
 
 int main(void)
 {
-  //syscall(SYS_write, 1, "I like pancakes\n", 17);
+  // syscall(SYS_write, 1, "I like pancakes\n", 17);
 
-  //BitmapImage bmp_image = read_bmp_file("blue_pixel_24.bmp");
+  // BitmapImage bmp_image = read_bmp_file("blue_pixel_24.bmp");
   //(void)bmp_image;
-  // printf("bmp_image -> %d", (int*)bmp_image);
+  //  printf("bmp_image -> %d", (int*)bmp_image);
 
   u32 x                = 0;
   u32 y                = 0;
@@ -928,11 +1002,17 @@ int main(void)
   u32 windowClass      = CopyFromParent;
   Visual* windowVisual = CopyFromParent;
 
-  u32 attributeValueMask                = CWBackPixmap | CWEventMask | CWBitGravity; // tell x11 to look at background_pixmap and event_mask
+  u32 attributeValueMask =
+      CWBackPixmap | CWEventMask |
+      CWBitGravity; // tell x11 to look at background_pixmap and event_mask
   XSetWindowAttributes windowAttributes = {0};
-  windowAttributes.background_pixmap    = None; // prevent flickering by suppressing erase
-  windowAttributes.background_pixel     = DARK_GREEN;
-  windowAttributes.event_mask           = KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask | ButtonReleaseMask | Button1MotionMask | StructureNotifyMask; // StructureNotifyMask for resizing
+  windowAttributes.background_pixmap =
+      None; // prevent flickering by suppressing erase
+  windowAttributes.background_pixel = DARK_GREEN;
+  windowAttributes.event_mask =
+      KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask |
+      ButtonReleaseMask | Button1MotionMask |
+      StructureNotifyMask; // StructureNotifyMask for resizing
 
   // XOpenDisplay https://linux.die.net/man/3/xopendisplay
   // Open connection with the X server
@@ -970,18 +1050,21 @@ int main(void)
   // XSetForeground(mainDisplay, gc, BlackPixel(mainDisplay, screen));
   int screen = DefaultScreen(mainDisplay);
 
-  usize buffer_size = (usize) WINDOW_WIDTH * WINDOW_HEIGHT * BYTES_PER_PIXEL;
+  usize buffer_size    = (usize)WINDOW_WIDTH * WINDOW_HEIGHT * BYTES_PER_PIXEL;
   char* x11_backbuffer = mmap(
-    NULL,
-    buffer_size,
-    PROT_READ | PROT_WRITE,
-    MAP_PRIVATE | MAP_ANONYMOUS,
-    -1,
-    0
+      NULL,
+      buffer_size,
+      PROT_READ | PROT_WRITE,
+      MAP_PRIVATE | MAP_ANONYMOUS,
+      -1,
+      0
   );
 
-  if (x11_backbuffer == MAP_FAILED) {
-    fprintf(stderr, "Fatal Error: Failed to allocate initial backbuffer for X11.\n");
+  if (x11_backbuffer == MAP_FAILED)
+  {
+    fprintf(
+        stderr, "Fatal Error: Failed to allocate initial backbuffer for X11.\n"
+    );
     XFreeGC(mainDisplay, gc);
     XDestroyWindow(mainDisplay, mainWindow);
     XCloseDisplay(mainDisplay);
@@ -1005,7 +1088,7 @@ int main(void)
 
   // https://tronche.com/gui/x/xlib/event-handling/XSelectInput.html
   // https://tronche.com/gui/x/xlib/events/mask.html
-  //XSelectInput(
+  // XSelectInput(
   //    mainDisplay,
   //    mainWindow,
   //    KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask |
@@ -1020,7 +1103,7 @@ int main(void)
   // XSync(mainDisplay, False);
   // XFlush(mainDisplay);
 
-  //image->data = malloc(image->bytes_per_line * image->height);
+  // image->data = malloc(image->bytes_per_line * image->height);
   x11_clear_buffer(image, BLACK);
 
   XEvent generalEvent;
@@ -1028,25 +1111,32 @@ int main(void)
   u64 y_offset = 0;
 
   // https://tronche.com/gui/x/xlib/event-handling/XPending.html
-  while (running) {
+  while (running)
+  {
     // poll (don't wait for all events) (similar to PeekMessageW)
-    while (XPending(mainDisplay) > 0) {
+    while (XPending(mainDisplay) > 0)
+    {
       XNextEvent(mainDisplay, &generalEvent);
 
-      #ifdef DEBUG
-      if (generalEvent.type == KeyPress) {
+#  ifdef DEBUG
+      if (generalEvent.type == KeyPress)
+      {
         printf("[DEBUG] KeyPress: %x\n", generalEvent.xkey.keycode);
-      } else {
+      }
+      else
+      {
         printf("[DEBUG] X11 Event: %d\n", generalEvent.type);
       }
-      #endif
+#  endif
 
-      switch (generalEvent.type) {
+      switch (generalEvent.type)
+      {
         case ConfigureNotify: {
           int new_width  = generalEvent.xconfigure.width;
           int new_height = generalEvent.xconfigure.height;
 
-          if (new_width != image->width || new_height != image->height) {
+          if (new_width != image->width || new_height != image->height)
+          {
             printf("[DEBUG] Resizing buffer to %dx%d\n", new_width, new_height);
 
             char* old_data = image->data;
@@ -1056,53 +1146,63 @@ int main(void)
             image->data = NULL;
             XDestroyImage(image);
 
-            if (munmap(old_data, old_size) == -1) {
+            if (munmap(old_data, old_size) == -1)
+            {
               perror("[ERROR] munmap for resizing backbuffer failed");
             }
 
             image = XCreateImage(
-              mainDisplay,
-              DefaultVisual(mainDisplay, screen),
-              DefaultDepth(mainDisplay, screen),
-              ZPixmap,
-              0,
-              NULL, // data pointer is null initially
-              new_width,
-              new_height,
-              32,
-              0
+                mainDisplay,
+                DefaultVisual(mainDisplay, screen),
+                DefaultDepth(mainDisplay, screen),
+                ZPixmap,
+                0,
+                NULL, // data pointer is null initially
+                new_width,
+                new_height,
+                32,
+                0
             );
 
             // reallocate for the new size
             usize new_buffer_size = image->bytes_per_line * image->height;
             current_buffer_size   = new_buffer_size;
-            image->data = mmap(
-              NULL,
-              new_buffer_size,
-              PROT_READ | PROT_WRITE,
-              MAP_PRIVATE | MAP_ANONYMOUS,
-              -1,
-              0
+            image->data           = mmap(
+                NULL,
+                new_buffer_size,
+                PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS,
+                -1,
+                0
             );
 
-            if (image->data == MAP_FAILED) {
-              fprintf(stderr, "ERROR: Failed to reallocate image data during resize.\n");
+            if (image->data == MAP_FAILED)
+            {
+              fprintf(
+                  stderr,
+                  "ERROR: Failed to reallocate image data during resize.\n"
+              );
               running = false;
             }
 
-            if (current_gui_mode == MODE_DRAWING) {
+            if (current_gui_mode == MODE_DRAWING)
+            {
               x11_clear_buffer(image, WHITE);
-            } else if (current_gui_mode == MODE_GRADIENT_ANIMATION) {
+            }
+            else if (current_gui_mode == MODE_GRADIENT_ANIMATION)
+            {
               draw_random_gradient(x_offset, y_offset, image);
             }
-          } break;
+          }
+          break;
         }
         // https://tronche.com/gui/x/xlib/events/exposure/expose.html
         case Expose: {
           printf("X11 Expose Event: %d\n", generalEvent.xexpose.type);
           x11_render_buffer(mainDisplay, mainWindow, gc, image);
-          //draw_to_buffer(y_color, x_color, image, gc, mainWindow, mainDisplay);
-          // if (generalEvent.xexpose.count) break;
+          // draw_to_buffer(y_color, x_color, image, gc, mainWindow,
+          // mainDisplay);
+          //  if (generalEvent.xexpose.count) break;
           ////XSetForeground(mainDisplay, gc, WhitePixel(mainDisplay,
           /// screen_num)); /XDrawString(mainDisplay, mainWindow, gc, 10, 10,
           /// mytext, strlen(mytext));
@@ -1110,42 +1210,46 @@ int main(void)
           break;
         }
         case MotionNotify: {
-          if (current_gui_mode == MODE_DRAWING && (generalEvent.xmotion.state & Button1Mask)) {
+          if (current_gui_mode == MODE_DRAWING &&
+              (generalEvent.xmotion.state & Button1Mask))
+          {
             int x_m = generalEvent.xmotion.x;
             int y_m = generalEvent.xmotion.y;
             x11_draw_pixel(image, x_m, y_m, BLACK);
             x11_render_buffer(mainDisplay, mainWindow, gc, image);
           }
 
-          //int symbol = XLookupKeysym(&generalEvent.xkey, 0);
+          // int symbol = XLookupKeysym(&generalEvent.xkey, 0);
           //// Mouse position
-          //int x = generalEvent.xkey.x;
-          //int y = generalEvent.xkey.y;
+          // int x = generalEvent.xkey.x;
+          // int y = generalEvent.xkey.y;
 
-          //printf(
-          //    "[DEBUG] MotionNotify symbol: %d, coordinates: [%d, %d]\n",
-          //    symbol,
-          //    x,
-          //    y
+          // printf(
+          //     "[DEBUG] MotionNotify symbol: %d, coordinates: [%d, %d]\n",
+          //     symbol,
+          //     x,
+          //     y
           //);
-          //XDrawPoint(mainDisplay, mainWindow, gc, x, y);
+          // XDrawPoint(mainDisplay, mainWindow, gc, x, y);
           break;
         }
         case ButtonPress: {
-          if (current_gui_mode == MODE_DRAWING && generalEvent.xbutton.button == Button1) {
+          if (current_gui_mode == MODE_DRAWING &&
+              generalEvent.xbutton.button == Button1)
+          {
             int symbol = XLookupKeysym(&generalEvent.xkey, 0);
             // Mouse position
             int x = generalEvent.xkey.x;
             int y = generalEvent.xkey.y;
 
-            #ifdef DEBUG
+#  ifdef DEBUG
             printf(
                 "[DEBUG] ButtonPress symbol: %d, coordinates: [%d, %d]\n",
                 symbol,
                 generalEvent.xkey.x,
                 generalEvent.xkey.y
             );
-            #endif
+#  endif
 
             x11_draw_pixel(image, x, y, BLACK);
             x11_render_buffer(mainDisplay, mainWindow, gc, image);
@@ -1153,7 +1257,7 @@ int main(void)
           break;
         }
         case ButtonRelease: {
-          #ifdef DEBUG
+#  ifdef DEBUG
           int symbol = XLookupKeysym(&generalEvent.xkey, 0);
 
           // Mouse position
@@ -1166,7 +1270,7 @@ int main(void)
               x,
               y
           );
-          #endif
+#  endif
           break;
         }
         case KeyPress: {
@@ -1175,10 +1279,12 @@ int main(void)
 
           printf("KeyPress: %x\n", generalEvent.xkey.keycode);
 
-          switch (symbol) {
+          switch (symbol)
+          {
             case XK_Escape: {
               printf("Escape pressed\n");
-            } break;
+            }
+            break;
             // case XK_Pointer_Button1: {
             //   printf("Pointer Button 1 pressed\n");
             //   break;
@@ -1189,51 +1295,62 @@ int main(void)
               x11_clear_buffer(image, WHITE);
               x11_render_buffer(mainDisplay, mainWindow, gc, image);
               printf("[DEBUG] Mode set to DRAWING: White canvas setup.\n");
-            } break;
+            }
+            break;
             case XK_r: {
-              if (current_gui_mode == MODE_DRAWING) {
+              if (current_gui_mode == MODE_DRAWING)
+              {
                 x11_clear_buffer(image, WHITE);
-              } else {
+              }
+              else
+              {
                 x_offset = 0;
                 y_offset = 0;
               }
               x11_render_buffer(mainDisplay, mainWindow, gc, image);
-            } break;
+            }
+            break;
             case XK_a: {
               // printf("\"a\" pressed\n");
               current_gui_mode = MODE_GRADIENT_ANIMATION;
               printf("[DEBUG] Mode set to ANIMATION: Gradient setup.\n");
-            } break;
+            }
+            break;
             case XK_q: {
               printf("Closing application\n");
               running = false;
-            } break;
+            }
+            break;
           }
-
-        } break;
+        }
+        break;
       }
     }
 
-    if (current_gui_mode == MODE_GRADIENT_ANIMATION) {
+    if (current_gui_mode == MODE_GRADIENT_ANIMATION)
+    {
       // move the animation
       ++x_offset;
       y_offset += 2;
       // render
-      //draw_random_gradient(x_offset, y_offset, image);
+      // draw_random_gradient(x_offset, y_offset, image);
       draw_snow(image);
       x11_render_buffer(mainDisplay, mainWindow, gc, image);
     }
   }
 
-  // Wait for the X Server to process all buffered requests and clear the queue before cleanup
+  // Wait for the X Server to process all buffered requests and clear the queue
+  // before cleanup
   XSync(mainDisplay, False);
 
-  if (image && image->data) {
+  if (image && image->data)
+  {
     // Prevent XDestroyImage from deallocating the backbuffer
     char* imgdata = image->data;
-    image->data = NULL;
+    image->data   = NULL;
 
-    if (munmap(imgdata, current_buffer_size) == -1) {
+    if (munmap(imgdata, current_buffer_size) == -1)
+    {
       perror("[ERROR] munmap for final cleanup backbuffer failed");
     }
   }

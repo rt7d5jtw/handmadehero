@@ -182,7 +182,8 @@ void write_bmp_file(
 
   FILE* bmp_file = fopen(filepath, "wb+");
 
-  if (bmp_file == NULL) {
+  if (bmp_file == NULL)
+  {
     perror("new bmp file could not be created");
     exit(EXIT_FAILURE);
   }
@@ -196,7 +197,8 @@ BitmapImage read_bmp_file(char* filepath)
   BitmapImage bmp_image = {0};
   FILE* file            = fopen(filepath, "rb");
 
-  if (file) {
+  if (file)
+  {
     fseek(file, 0, SEEK_END);
     size_t filesize = ftell(file);
     fseek(file, 0, SEEK_SET);
@@ -294,7 +296,8 @@ BitmapImage read_bmp_file(char* filepath)
 
     bmp_image.data = (u8*)mmap(addr, mmap_len, mmap_prot, mmap_flags, -1, 0);
 
-    if (bmp_image.data == MAP_FAILED) {
+    if (bmp_image.data == MAP_FAILED)
+    {
       perror("mmap");
       exit(EXIT_FAILURE);
     }
@@ -307,7 +310,8 @@ BitmapImage read_bmp_file(char* filepath)
         0, bmp_image.header.image_size, MEM_COMMIT, PAGE_READWRITE
     );
 
-    if (bmp_image.data == NULL) {
+    if (bmp_image.data == NULL)
+    {
       GetLastError();
       exit(-1);
     }
@@ -316,12 +320,14 @@ BitmapImage read_bmp_file(char* filepath)
     fread(bmp_image.data, sizeof(u8), bmp_image.header.image_size, file);
 
     printf("\n");
-    for (u8 i = 0; i < bmp_image.header.image_size; i += 1) {
+    for (u8 i = 0; i < bmp_image.header.image_size; i += 1)
+    {
       printf("pages[%d] -> %#010x\n", i, *(bmp_image.data + i));
     }
 
     FILE* new_bmp_file = fopen("test.bmp", "wb+");
-    if (new_bmp_file == NULL) {
+    if (new_bmp_file == NULL)
+    {
       perror("new bmp file could not be created");
       exit(EXIT_FAILURE);
     }
