@@ -33,6 +33,7 @@ u32 xorshift32(void)
 #  endif
 
 #  include <windows.h>
+#  include <xinput.h>
 
 #ifdef DEBUG
 
@@ -90,7 +91,44 @@ struct Win32WindowDimensions {
   u32 height;
 };
 
-Win32WindowDimensions win32_get_window_dimensions(HWND window_handle) {
+#define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
+typedef X_INPUT_GET_STATE(x_input_get_state);
+X_INPUT_GET_STATE(XInputGetStateStub)
+{
+  return ERROR_DEVICE_NOT_CONNECTED;
+}
+global x_input_get_state *XInputGetState_ = XInputGetStateStub;
+#define XInputGetState XInputGetState_
+
+#define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
+typedef X_INPUT_SET_STATE(x_input_set_state);
+X_INPUT_SET_STATE(XInputSetStateStub)
+{
+  return ERROR_DEVICE_NOT_CONNECTED;
+}
+global x_input_get_state *XInputSetState_ = XInputSetStateStub;
+#define XInputSetState XInputSetState_
+
+internal void win32_load_xinput(void)
+{
+  HMODULE xInputLibrary = LoadLibraryA("xinput1_4.dll");
+  if (!xInputLibrary)
+  {
+    xInputLibrary = LoadLibraryA("Xinput1_3.dll");
+  }
+  if (!xInputLibrary)
+  {
+    xInputLibrary = LoadLibraryA("Xinput9_1_0.dll");
+  }
+
+  if (xInputLibrary)
+  {
+    XInputGetState = (x_input_get_state *)GetProcAddress(xInputLibrary, "XInputGetState");
+    XInputSetState = (x_input_set_state *)GetProcAddress(xInputLibrary, "XInputSetState");
+  }
+}
+
+internal Win32WindowDimensions win32_get_window_dimensions(HWND window_handle) {
   Win32WindowDimensions dims = {0};
   RECT client_rect;
   GetClientRect(window_handle, &client_rect);
@@ -457,10 +495,47 @@ int WINAPI WinMain(
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-peekmessagew
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-dispatchmessagea
     while (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE)) {
-      if (msg.message == WM_QUIT)
+      if (msg.message == WM_QUIT) {
         running = false;
+      }
+
       TranslateMessage(&msg);
       DispatchMessage(&msg);
+    }
+
+    // Xinput API
+    for (DWORD controllerIndex = 0; controllerIndex < XUSER_MAX_COUNT; controllerIndex += 1)
+    {
+      XINPUT_STATE controllerState;
+      if (XInputGetState(controllerIndex, &controllerState) == ERROR_SUCCESS)
+      {
+        // Controller is plugged in
+        XINPUT_GAMEPAD *pad = &controllerState.Gamepad;
+
+        bool up           = pad->wButtons & XINPUT_GAMEPAD_DPAD_UP;
+        bool down         = pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
+        bool left         = pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
+        bool right        = pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
+        bool start        = pad->wButtons & XINPUT_GAMEPAD_START;
+        bool back         = pad->wButtons & XINPUT_GAMEPAD_BACK;
+        bool leftShoulder = pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER;
+        bool righthoulder = pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER;
+        bool buttonA      = pad->wButtons & XINPUT_GAMEPAD_A;
+        bool buttonB      = pad->wButtons & XINPUT_GAMEPAD_B;
+        bool buttonX      = pad->wButtons & XINPUT_GAMEPAD_X;
+        bool buttonY      = pad->wButtons & XINPUT_GAMEPAD_Y;
+
+        s16 stickX = pad->sThumbLX;
+        s16 stickY = pad->sThumbLY;
+
+        if (buttonA)
+        {
+          y_offset += 2;
+        }
+
+      } else {
+        // Controller is not available
+      }
     }
 
     // GDI Drawing logic {{{
@@ -500,7 +575,7 @@ int WINAPI WinMain(
 /**
  * Windows entrypoint
  */
-LRESULT CALLBACK
+internal LRESULT CALLBACK
 win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   LRESULT result = 0;
