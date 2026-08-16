@@ -2,15 +2,15 @@
  */
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <stdbool.h>
+#include <assert.h>
 #include "base.h"
 
 global u32 active_prng_seed = 123456789;
 
 // Xorshift RNGs
 // https://excamera.com/sphinx/article-xorshift.html
-u32 xorshift32()
+u32 xorshift32(void)
 {
   u32 x = active_prng_seed;
 
@@ -107,6 +107,9 @@ void draw_snow(
   u32 bitmap_height
 )
 {
+  assert(bitmap_memory != NULL && "GDI Bitmap memory buffer must not be null!");
+  assert(bitmap_width > 0 && bitmap_height > 0 && "GDI Bitmap dimensions must be greater than zero!");
+
   u32 pitch  = bitmap_width * 4;
   u8* row    = (u8*)bitmap_memory;
 
@@ -145,6 +148,9 @@ void draw_random_gradient(
     u32 y_offset
 )
 {
+  assert(bitmap_memory != NULL && "GDI Bitmap memory buffer must not be null!");
+  assert(bitmap_width > 0 && bitmap_height > 0 && "GDI Bitmap dimensions must be greater than zero!");
+
   /* stride or pitch: the total number of bytes in one horizontal line of the bitmap */
   u32 pitch = bitmap_width * win32_offscreen_buffer.bytes_per_pixel;
   /* pointer to the first byte of the current row being processed */
@@ -576,7 +582,6 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 #  include <sys/syscall.h>
 #  include <sys/mman.h>
 #  include <stdbool.h>
-#  include <stdlib.h>
 #  include <X11/Xlib.h>
 #  include <X11/keysym.h>
 #  include <X11/Xutil.h>
@@ -642,6 +647,8 @@ void x11_render_buffer(Display* display, Window window, GC gc, XImage* image) {
 
 void draw_snow(XImage* image)
 {
+  assert(image != NULL && image->data != NULL && "XImage and XImage buffer must not be null");
+
   int height       = image->height;
   int width        = image->width;
   int pitch        = image->bytes_per_line;
@@ -670,7 +677,7 @@ void draw_random_gradient(
     XImage* image
 )
 {
-  if (!image) return;
+  assert(image != NULL && image->data != NULL && "XImage and XImage buffer must not be null");
 
   int height       = image->height;
   int width        = image->width;
