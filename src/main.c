@@ -117,9 +117,8 @@ void draw_snow(
     u32* pixel = (u32*)row;
 
     for (u32 x = 0; x < bitmap_width; ++x) {
-      u32 bits  = xorshift32();
-      u8 chance = (bits >> 8) & 0xFF;
-      u8 noise  = (chance < (255 * 40 / 100)) ? (u8)(bits & 0xFF) : 0;
+      u32 bits = xorshift32();
+      u8 noise = (u8)(bits & (bits >> 8)) & (bits >> 16);
 
       u8 blue   = noise;
       u8 green  = noise;
