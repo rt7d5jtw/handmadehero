@@ -6,7 +6,9 @@ BreakConstructorInitializers: BeforeComma
 IndentPPDirectives: AfterHash
 BreakBeforeBraces: Custom
 BraceWrapping:
-    AfterFunction: true
+  AfterControlStatement: Always
+  AfterFunction: true
+  BeforeElse: true
 NamespaceIndentation: None
 QualifierAlignment: Right
 AllowShortIfStatementsOnASingleLine: false
