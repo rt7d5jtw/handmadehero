@@ -143,7 +143,7 @@ internal void win32_load_xinput(void)
 // DirectSoundCreate
 // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708921(v=vs.85)
 #  define DIRECT_SOUND_CREATE(name)                             \
-    HRESULT WINAPI DirectSoundCreate(                           \
+    HRESULT WINAPI name(                                        \
         LPGUID lpGuid, LPDIRECTSOUND* ppDS, LPUNKNOWN pUnkOuter \
     );
 typedef DIRECT_SOUND_CREATE(direct_sound_create);
@@ -174,7 +174,7 @@ internal void win32_init_direct_sound(
 
       // SetCooperativeLevel
       // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708948(v=vs.85)#remarks
-      if (SUCCEEDED(DirectSound->SetCooperativeLevel(window_handle, DSSCL_PRIORITY)))
+      if (SUCCEEDED(DirectSound->lpVtbl->SetCooperativeLevel(DirectSound, window_handle, DSSCL_PRIORITY)))
       {
         // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee416820(v=vs.85)
         DSBUFFERDESC buffer_description = {0};
@@ -184,9 +184,9 @@ internal void win32_init_direct_sound(
         // Create a primary buffer
         IDirectSoundBuffer* primary_sound_buffer;
 
-        if (SUCCEEDED(DirectSound->CreateSoundBuffer(&buffer_description, &primary_sound_buffer, 0)))
+        if (SUCCEEDED(DirectSound->lpVtbl->CreateSoundBuffer(DirectSound, &buffer_description, &primary_sound_buffer, 0)))
         {
-          if (SUCCEEDED(primary_sound_buffer->SetFormat(&wave_format)))
+          if (SUCCEEDED(primary_sound_buffer->lpVtbl->SetFormat(primary_sound_buffer, &wave_format)))
           {
             OutputDebugStringA("Primary DirectSound buffer format was set.\n");
           }
@@ -200,7 +200,7 @@ internal void win32_init_direct_sound(
       buffer_description.lpwfxFormat   = &wave_format;
 
       IDirectSoundBuffer* secondary_buffer;
-      if (SUCCEEDED(DirectSound->CreateSoundBuffer(&buffer_description, &secondary_buffer, 0)))
+      if (SUCCEEDED(DirectSound->lpVtbl->CreateSoundBuffer(DirectSound, &buffer_description, &secondary_buffer, 0)))
       {
         OutputDebugStringA("Secondary DirectSound buffer created Successfully.\n");
       }
@@ -721,15 +721,15 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
   LRESULT result = 0;
   switch (msg)
   {
-    case WM_KEYDOWN: {
-      switch (wParam)
-      {
-        // Close window from 'Q'
-        case 'Q': {
-          DestroyWindow(window_handle);
-        }
-      }
-    }
+    //case WM_KEYDOWN: {
+    //  switch (wParam)
+    //  {
+    //    // Close window from 'Q'
+    //    case 'Q': {
+    //      DestroyWindow(window_handle);
+    //    }
+    //  }
+    //}
     break;
     case WM_QUIT:
     case WM_DESTROY: {
