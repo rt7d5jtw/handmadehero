@@ -732,7 +732,8 @@ void draw_snow(XImage* image)
     u32* pixel = (u32 *)(buffer_start + (y * pitch));
 
     for (int x = 0; x < width; x += 1) {
-      u8 noise = (u8)xorshift32();
+      u32 bits = xorshift32();
+      u8 noise = (u8)(bits & (bits >> 8)) & (bits >> 16);
 
       u8 blue  = noise;
       u8 green = noise;
