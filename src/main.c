@@ -33,6 +33,7 @@ u32 xorshift32(void)
 #    define UNICODE
 #  endif
 
+#  include <dsound.h>
 #  include <windows.h>
 #  include <xinput.h>
 
@@ -95,21 +96,19 @@ struct Win32WindowDimensions {
   u32 height;
 };
 
-#  define X_INPUT_GET_STATE(name) \
-    DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE* pState)
+// clang-format off
+#  define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE* pState)
 typedef X_INPUT_GET_STATE(x_input_get_state);
-X_INPUT_GET_STATE(XInputGetStateStub)
-{ return ERROR_DEVICE_NOT_CONNECTED; }
+X_INPUT_GET_STATE(XInputGetStateStub) { return ERROR_DEVICE_NOT_CONNECTED; }
 global x_input_get_state* XInputGetState_ = XInputGetStateStub;
 #  define XInputGetState XInputGetState_
 
-#  define X_INPUT_SET_STATE(name) \
-    DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
+#  define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
 typedef X_INPUT_SET_STATE(x_input_set_state);
-X_INPUT_SET_STATE(XInputSetStateStub)
-{ return ERROR_DEVICE_NOT_CONNECTED; }
+X_INPUT_SET_STATE(XInputSetStateStub) { return ERROR_DEVICE_NOT_CONNECTED; }
 global x_input_get_state* XInputSetState_ = XInputSetStateStub;
 #  define XInputSetState XInputSetState_
+// clang-format on
 
 internal void win32_load_xinput(void)
 {
@@ -137,6 +136,74 @@ internal void win32_load_xinput(void)
     if (!XInputSetState)
     {
       XInputSetState = XInputSetStateStub;
+    }
+  }
+}
+
+// DirectSoundCreate
+// https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708921(v=vs.85)
+#  define DIRECT_SOUND_CREATE(name)                             \
+    HRESULT WINAPI DirectSoundCreate(                           \
+        LPGUID lpGuid, LPDIRECTSOUND* ppDS, LPUNKNOWN pUnkOuter \
+    );
+typedef DIRECT_SOUND_CREATE(direct_sound_create);
+
+internal void win32_init_direct_sound(
+  HWND window_handle,
+  s32 samples_per_second,
+  s32 buffer_size
+)
+{
+  HMODULE directSoundLibrary = LoadLibraryA("dsound.dll");
+  if (directSoundLibrary)
+  {
+    direct_sound_create* DirectSoundCreate = (direct_sound_create*) GetProcAddress(directSoundLibrary, "DirectSoundCreate");
+    IDirectSound* DirectSound;
+
+    if (DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &DirectSound, 0)))
+    {
+      // SetFormat
+      // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708936(v=vs.85)
+      WAVEFORMATEX wave_format    = {0};
+      wave_format.wFormatTag      = WAVE_FORMAT_PCM;
+      wave_format.nChannels       = 2;
+      wave_format.nSamplesPerSec  = samples_per_second;
+      wave_format.wBitsPerSample  = 16;
+      wave_format.nBlockAlign     = (wave_format.nChannels * wave_format.wBitsPerSample) / 8;
+      wave_format.nAvgBytesPerSec = wave_format.nSamplesPerSec * wave_format.nBlockAlign;
+
+      // SetCooperativeLevel
+      // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708948(v=vs.85)#remarks
+      if (SUCCEEDED(DirectSound->SetCooperativeLevel(window_handle, DSSCL_PRIORITY)))
+      {
+        // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee416820(v=vs.85)
+        DSBUFFERDESC buffer_description = {0};
+        buffer_description.dwSize       = sizeof(buffer_description);
+        buffer_description.dwFlags      = DSBCAPS_PRIMARYBUFFER;
+
+        // Create a primary buffer
+        IDirectSoundBuffer* primary_sound_buffer;
+
+        if (SUCCEEDED(DirectSound->CreateSoundBuffer(&buffer_description, &primary_sound_buffer, 0)))
+        {
+          if (SUCCEEDED(primary_sound_buffer->SetFormat(&wave_format)))
+          {
+            OutputDebugStringA("Primary DirectSound buffer format was set.\n");
+          }
+        }
+      }
+
+      // Create a secondary buffer
+      DSBUFFERDESC buffer_description  = {0};
+      buffer_description.dwSize        = sizeof(buffer_description);
+      buffer_description.dwBufferBytes = buffer_size;
+      buffer_description.lpwfxFormat   = &wave_format;
+
+      IDirectSoundBuffer* secondary_buffer;
+      if (SUCCEEDED(DirectSound->CreateSoundBuffer(&buffer_description, &secondary_buffer, 0)))
+      {
+        OutputDebugStringA("Secondary DirectSound buffer created Successfully.\n");
+      }
     }
   }
 }
@@ -206,8 +273,7 @@ void draw_random_gradient(
       "GDI Bitmap dimensions must be greater than zero!"
   );
 
-  /* stride or pitch: the total number of bytes in one horizontal line of the
-   * bitmap */
+  /* stride or pitch: the total number of bytes in one horizontal line of the bitmap */
   u32 pitch = bitmap_width * win32_offscreen_buffer.bytes_per_pixel;
   /* pointer to the first byte of the current row being processed */
   u8* row = (u8*)bitmap_memory;
@@ -239,7 +305,7 @@ void draw_random_gradient(
     }
 
     // Move the row pointer down by the pitch (stride) to start the next row
-    row += pitch; // win32_offscreen_buffer.pitch;
+    row += pitch;
   }
 }
 
@@ -257,8 +323,7 @@ void draw_pixel(int x, int y, u32 color)
   *pixel = color;
 }
 
-/* frees previous bitmap, allocates a new bitmap buffer, initializes and sets it
- * up */
+/* frees previous bitmap, allocates a new bitmap buffer, initializes and sets it up */
 internal void win32_resize_dib_section(
     Win32_OffscreenBuffer* offscreen_buffer,
     int width,
@@ -274,11 +339,9 @@ internal void win32_resize_dib_section(
   offscreen_buffer->height          = height;
   offscreen_buffer->bytes_per_pixel = 4;
 
-  offscreen_buffer->info.bmiHeader.biSize =
-      sizeof(offscreen_buffer->info.bmiHeader);
-  offscreen_buffer->info.bmiHeader.biWidth = offscreen_buffer->width;
-  offscreen_buffer->info.bmiHeader.biHeight =
-      -cast(s32)(offscreen_buffer->height);
+  offscreen_buffer->info.bmiHeader.biSize        = sizeof(offscreen_buffer->info.bmiHeader);
+  offscreen_buffer->info.bmiHeader.biWidth       = offscreen_buffer->width;
+  offscreen_buffer->info.bmiHeader.biHeight      = (s32)(offscreen_buffer->height);
   offscreen_buffer->info.bmiHeader.biPlanes      = 1;
   offscreen_buffer->info.bmiHeader.biBitCount    = 32;
   offscreen_buffer->info.bmiHeader.biCompression = BI_RGB;
@@ -286,9 +349,7 @@ internal void win32_resize_dib_section(
   int bitmap_memory_size = offscreen_buffer->bytes_per_pixel *
                            (offscreen_buffer->width * offscreen_buffer->height);
 
-  offscreen_buffer->pixels = VirtualAlloc(
-      0, bitmap_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE
-  );
+  offscreen_buffer->pixels = VirtualAlloc(0, bitmap_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 }
 
 internal void
@@ -297,25 +358,25 @@ win32_resize_bitmap(Win32_OffscreenBuffer* offscreen_buffer, LPARAM lParam)
   offscreen_buffer->info.bmiHeader.biWidth  = LOWORD(lParam);
   offscreen_buffer->info.bmiHeader.biHeight = -HIWORD(
       lParam
-  ); // DIBs are based in a coordinate system that is upside down
-  // relative to Windows, source:
+  );
+  // DIBs are based in a coordinate system that is upside down relative to Windows, source:
   // https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
 
   // Delete already existing bitmap
-  if (offscreen_buffer->bitmap_handle)
+  if (offscreen_buffer->bitmap_handle) {
     DeleteObject(offscreen_buffer->bitmap_handle);
+  }
 
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
   // Create a bitmap
 
   // hdc      - Handle to a device context.
   // pbmi     - Pointer to bitmap info.
-  // usage    - type of data contained in the bmiColors array member of the
-  // BITMAPINFO structure pointed to by pbmi. ppvBits  - a pointer to a variable
-  // that receives a pointer ot the location of the DIB bit values. hSection - a
-  // handle to a file-mapping object that hte function will use to create the
-  // DIB. offset   - the offset form the beginning of the file-mapping object
-  // referenced by hSection where storage for the bitmap bit values is to begin.
+  // usage    - type of data contained in the bmiColors array member of the BITMAPINFO structure pointed to by pbmi.
+  // ppvBits  - a pointer to a variable that receives a pointer ot the location of the DIB bit values.
+  // hSection - a handle to a file-mapping object that hte function will use to create the DIB.
+  // offset   - the offset form the beginning of the file-mapping object referenced by hSection where storage for the bitmap bit values is to begin.
+
   offscreen_buffer->bitmap_handle = CreateDIBSection(
       NULL,
       &offscreen_buffer->info,
@@ -338,10 +399,11 @@ win32_resize_bitmap(Win32_OffscreenBuffer* offscreen_buffer, LPARAM lParam)
 internal void
 win32_paint_bitmap(HWND window_handle, PAINTSTRUCT paint, HDC device_context)
 {
+  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
   device_context = BeginPaint(
       window_handle,
       &paint
-  ); // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
+  );
 
   // NOTE: origin (0,0) is conventionally located at the top-left corner for
   // Windows GDI.
@@ -482,15 +544,10 @@ int WINAPI WinMain(
   // Dimensions and color information for the bitmap
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfo
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfoheader
-  win32_offscreen_buffer.info.bmiHeader.biSize = sizeof(
-      win32_offscreen_buffer.info.bmiHeader
-  ); // the number of bytes required by the structure
-  win32_offscreen_buffer.info.bmiHeader.biPlanes =
-      1; // the number of planes for the target device, must be set to 1
-  win32_offscreen_buffer.info.bmiHeader.biBitCount =
-      32; // the number of of bits per pixel (bpp)
-  win32_offscreen_buffer.info.bmiHeader.biCompression =
-      BI_RGB; // uncompressed RGB format
+  win32_offscreen_buffer.info.bmiHeader.biSize        = sizeof(win32_offscreen_buffer.info.bmiHeader); // the number of bytes required by the structure
+  win32_offscreen_buffer.info.bmiHeader.biPlanes      = 1; // the number of planes for the target device, must be set to 1
+  win32_offscreen_buffer.info.bmiHeader.biBitCount    = 32; // the number of of bits per pixel (bpp)
+  win32_offscreen_buffer.info.bmiHeader.biCompression = BI_RGB; // uncompressed RGB format
 
   // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createcompatibledc
   win32_offscreen_buffer.frame_device_context = CreateCompatibleDC(0);
@@ -501,13 +558,13 @@ int WINAPI WinMain(
   DWORD extended_window_style = WS_EX_CLIENTEDGE;
   LPCWSTR window_name         = L"The title of my window";
   DWORD window_style          = WS_OVERLAPPEDWINDOW;
-  int window_x       = CW_USEDEFAULT; // horizontal position of the window
-  int window_y       = CW_USEDEFAULT; // vertical position of the window
-  int window_width   = WINDOW_WIDTH;
-  int window_height  = WINDOW_HEIGHT;
-  HWND window_parent = NULL;
-  HMENU window_menu  = NULL;
-  LPVOID lp_param    = NULL;
+  int window_x                = CW_USEDEFAULT; // horizontal position of the window
+  int window_y                = CW_USEDEFAULT; // vertical position of the window
+  int window_width            = WINDOW_WIDTH;
+  int window_height           = WINDOW_HEIGHT;
+  HWND window_parent          = NULL;
+  HMENU window_menu           = NULL;
+  LPVOID lp_param             = NULL;
 
   // Window handle for
   window_handle = CreateWindowEx(
@@ -544,8 +601,15 @@ int WINAPI WinMain(
   GetClientRect(window_handle, &rect);
   client_width = rect.right - rect.left;
 
-  u32 x_offset = 0;
-  u32 y_offset = 0;
+  u32 x_offset              = 0;
+  u32 y_offset              = 0;
+  s32 samples_per_second    = 48000;
+  s32 bytes_per_sample      = sizeof(s16) * 2;
+  s32 secondary_buffer_size = 2 * samples_per_second * bytes_per_sample;
+
+  win32_init_direct_sound(
+      window_handle, samples_per_second, secondary_buffer_size
+  );
 
   while (running)
   {
@@ -610,9 +674,7 @@ int WINAPI WinMain(
 
     // GDI Drawing logic {{{
 
-    // draw_random_gradient(win32_offscreen_buffer.pixels,
-    // win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset,
-    // y_offset);
+    //draw_random_gradient(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset, y_offset);
     draw_snow(
         win32_offscreen_buffer.pixels,
         win32_offscreen_buffer.width,
@@ -620,14 +682,12 @@ int WINAPI WinMain(
     );
 
     Win32WindowDimensions dims = win32_get_window_dimensions(window_handle);
-    win32_display_buffer_in_window(
-        &win32_offscreen_buffer, device_context, dims.width, dims.height
-    );
-
+    win32_display_buffer_in_window(&win32_offscreen_buffer, device_context, dims.width, dims.height);
     ReleaseDC(window_handle, device_context);
 
     ++x_offset;
     y_offset += 2;
+
     /*
      InvalidateRect marks a section of the window invalid and
      needing to be redrawn. Passing in NULL invalidates the entire window.
