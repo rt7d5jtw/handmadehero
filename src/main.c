@@ -536,6 +536,12 @@ int WINAPI WinMain(
       } else {
         // Controller is not available
       }
+
+      // test xinput vibration
+      //XINPUT_VIBRATION xinput_vibration;
+      //xinput_vibration.wLeftMotorSpeed  = 60000;
+      //xinput_vibration.wRightMotorSpeed = 60000;
+      //XInputSetState(0, &xinput_vibration);
     }
 
     // GDI Drawing logic {{{
@@ -592,6 +598,75 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY: {
       running = false;
     } break;
+    case WM_SYSKEYDOWN:
+    case WM_SYSKEYUP:
+    case WM_KEYDOWN:
+    case WM_KEYUP:
+    {
+      // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+      u32 vkCode = WParam;
+      bool wasDown = ((lParam & (1 << 30)) != 0)
+      bool isDown = ((lParam & (1 << 31)) == 0)
+
+      if (wasDown != isDown)
+      {
+        if (vkCode == 'W')
+        {
+            OutputDebugStringA("W\n");
+        }
+        else if (vkCode == 'A')
+        {
+            OutputDebugStringA("A\n");
+        }
+        else if (vkCode == 'S')
+        {
+            OutputDebugStringA("S\n");
+        }
+        else if (vkCode == 'D')
+        {
+            OutputDebugStringA("D\n");
+        }
+        else if (vkCode == 'Q')
+        {
+        }
+        else if (vkCode == 'E')
+        {
+        }
+        else if (vkCode == VK_UP)
+        {
+        }
+        else if (vkCode == VK_DOWN)
+        {
+        }
+        else if (vkCode == VK_LEFT)
+        {
+        }
+        else if (vkCode == VK_RIGHT)
+        {
+        }
+        else if (vkCode == VK_ESCAPE)
+        {
+          OutputDebugStringA("ESCAPE: ");
+          if (IsDown)
+          {
+              OutputDebugStringA("IsDown ");
+          }
+          if (WasDown)
+          {
+              OutputDebugStringA("WasDown");
+          }
+          OutputDebugStringA("\n");
+        }
+        else if (vkCode == VK_SPACE)
+        {
+        }
+        bool altKeyWasDown = ((lParam & (1 << 29)) != 0);
+        if ((vkCode == VK_F4) && altKeyWasDown)
+        {
+          running = false;
+        }
+      }
+    }
     //case WM_LBUTTONUP: {
     //    int x = GetlParamX(lParam);
     //    int y = GetlParamY(lParam);
