@@ -25,6 +25,11 @@ typedef int16_t s16;
 typedef int32_t s32;
 typedef int64_t s64;
 
+typedef s8 b8;
+typedef s16 b16;
+typedef s32 b32;
+typedef s64 b64;
+
 typedef size_t usize;
 
 // packed structs macro

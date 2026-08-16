@@ -660,7 +660,7 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
         else if (vkCode == VK_SPACE)
         {
         }
-        bool altKeyWasDown = ((lParam & (1 << 29)) != 0);
+        b32 altKeyWasDown = ((lParam & (1 << 29)) != 0);
         if ((vkCode == VK_F4) && altKeyWasDown)
         {
           running = false;
