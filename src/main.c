@@ -604,9 +604,9 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_KEYUP:
     {
       // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
-      u32 vkCode = WParam;
-      bool wasDown = ((lParam & (1 << 30)) != 0)
-      bool isDown = ((lParam & (1 << 31)) == 0)
+      u32 vkCode = wParam;
+      bool wasDown = ((lParam & (1 << 30)) != 0);
+      bool isDown = ((lParam & (1 << 31)) == 0);
 
       if (wasDown != isDown)
       {
@@ -647,13 +647,13 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
         else if (vkCode == VK_ESCAPE)
         {
           OutputDebugStringA("ESCAPE: ");
-          if (IsDown)
+          if (isDown)
           {
-              OutputDebugStringA("IsDown ");
+              OutputDebugStringA("isDown ");
           }
-          if (WasDown)
+          if (wasDown)
           {
-              OutputDebugStringA("WasDown");
+              OutputDebugStringA("wasDown");
           }
           OutputDebugStringA("\n");
         }
