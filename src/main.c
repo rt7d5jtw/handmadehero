@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "base.h"
 
@@ -926,14 +927,17 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 
 #if defined(__linux__)
 
-#  include <X11/Xlib.h>
-#  include <X11/Xutil.h>
-#  include <X11/keysym.h>
 #  include <stdbool.h>
 #  include <stdio.h>
 #  include <sys/mman.h>
 #  include <sys/syscall.h>
 #  include <unistd.h>
+
+#  include <X11/Xlib.h>
+#  include <X11/Xutil.h>
+#  include <X11/keysym.h>
+
+#  include <alsa/asoundlib.h>
 
 #  include "bmp.h"
 
@@ -1241,6 +1245,45 @@ int main(void)
   u64 x_offset = 0;
   u64 y_offset = 0;
 
+  u64 SAMPLE_RATE = 48000;
+  s16 samples[48000 * 2] = {0};
+  u32 running_sample_index = 0;
+  s32 toneHz = 256;
+  s32 square_wave_period = SAMPLE_RATE / toneHz;
+  s32 half_square_wave_period = square_wave_period / 2;
+  s32 tone_volume = 3000;
+  u32 audio_channels = 2;
+
+  snd_pcm_t *pcm_handle = NULL;
+  int alsa_open = snd_pcm_open(&pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
+
+  if (alsa_open < 0)
+  {
+    fprintf(stderr, "[ALSA] Unable to open PCM device: %s\n", snd_strerror(alsa_open));
+  }
+
+  snd_pcm_hw_params_t *pcm_hardware_configuration;
+  snd_pcm_hw_params_alloca(&pcm_hardware_configuration);
+  snd_pcm_hw_params_any(pcm_handle, pcm_hardware_configuration);
+  snd_pcm_hw_params_set_access(pcm_handle, pcm_hardware_configuration, SND_PCM_ACCESS_RW_INTERLEAVED);
+  snd_pcm_hw_params_set_format(pcm_handle, pcm_hardware_configuration, SND_PCM_FORMAT_S16_LE);
+
+  snd_pcm_hw_params_set_channels(pcm_handle, pcm_hardware_configuration, audio_channels);
+  snd_pcm_hw_params_set_rate(pcm_handle, pcm_hardware_configuration, SAMPLE_RATE, 0);
+  snd_pcm_hw_params_set_periods(pcm_handle, pcm_hardware_configuration, 10, 0);
+  snd_pcm_hw_params_set_period_time(pcm_handle, pcm_hardware_configuration, 100000, 0);
+  int alsa_hw_params = snd_pcm_hw_params(pcm_handle, pcm_hardware_configuration);
+  if (alsa_hw_params < 0)
+  {
+    fprintf(stderr, "[ALSA] Unable to set hardware parameters: %s\n", snd_strerror(alsa_hw_params));
+    snd_pcm_close(pcm_handle);
+    pcm_handle = NULL;
+  }
+
+  // set alsa to non-blocking mode
+  // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga6bd90de1d1527b5804090dcce51079ad
+  snd_pcm_nonblock(pcm_handle, 1);
+
   // https://tronche.com/gui/x/xlib/event-handling/XPending.html
   while (running)
   {
@@ -1458,6 +1501,46 @@ int main(void)
       }
     }
 
+    // ---------------------------------------------------------
+    // ALSA Audio Ring Buffer Logic
+    // ---------------------------------------------------------
+
+    // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga8bb836bd0c414b59789d51a5f5379c08
+    snd_pcm_sframes_t frames_ready = snd_pcm_avail_update(pcm_handle);
+
+    if (frames_ready < 0)
+    {
+		  if (frames_ready== -EPIPE) {
+        fprintf (stderr, "[ALSA] Buffer undderrun (xrun) occurred. Recovering...\n");
+        snd_pcm_prepare(pcm_handle);
+		  } else {
+        fprintf(stderr, "[ALSA] Unknown ALSA avail update return value (%ld)\n", frames_ready);
+		  }
+      // Skip rest of the aduio handling for this frame
+      continue;
+    }
+
+    if (frames_ready > 0)
+    {
+      frames_ready    = ClampTop(frames_ready, 48000);
+      s16 *sample_out = samples;
+
+      // Generate audio frames
+      for (snd_pcm_sframes_t idx = 0; idx < frames_ready; idx += 1)
+      {
+        s16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
+        *sample_out++ = sample_value; // Left channel
+        *sample_out++ = sample_value; // Right channel
+      }
+
+      snd_pcm_sframes_t frames_written = snd_pcm_writei(pcm_handle, samples, frames_ready);
+      if (frames_written == -EPIPE)
+      {
+        fprintf(stderr, "[ALSA] Buffer underrun during write. Recovering...\n");
+        snd_pcm_prepare(pcm_handle);
+      }
+    }
+
     if (current_gui_mode == MODE_GRADIENT_ANIMATION)
     {
       // move the animation
@@ -1487,11 +1570,21 @@ int main(void)
   }
 
   // Cleanup
+
+  if (pcm_handle)
+  {
+    snd_pcm_drain(pcm_handle);
+    snd_pcm_close(pcm_handle);
+    pcm_handle = NULL;
+  }
+
   XDestroyImage(image);
   XFreeGC(mainDisplay, gc);
   XDestroyWindow(mainDisplay, mainWindow);
+
   // https://tronche.com/gui/x/xlib/display/XCloseDisplay.html
   XCloseDisplay(mainDisplay);
+
 
   return 0;
 }
