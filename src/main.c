@@ -69,7 +69,7 @@ u32 xorshift32(void)
 #  define GetlParamY(lp) ((int)(short)HIWORD(lp))
 
 // DirectSound variables
-global IDirectSoundBuffer secondary_direct_sound_buffer;
+global IDirectSoundBuffer *secondary_direct_sound_buffer;
 
 /*
   Device-Independent Bitmaps (DIB)
@@ -612,12 +612,12 @@ int WINAPI WinMain(
   s32 toneHz = 256;
   s32 square_wave_period = samples_per_second / toneHz;
   s32 half_square_wave_period = square_wave_period / 2;
-  s32 tone_volume = 3000;
+  s32 tone_volume = 1500;
 
   win32_init_direct_sound(
       window_handle, samples_per_second, secondary_buffer_size
   );
-  secondary_direct_sound_buffer->lpVtbl->Play(0, 0, DSBPLAY_LOOPING);
+  secondary_direct_sound_buffer->lpVtbl->Play(secondary_direct_sound_buffer, 0, 0, DSBPLAY_LOOPING);
 
   while (running)
   {
@@ -694,7 +694,7 @@ int WINAPI WinMain(
     DWORD write_cursor;
 
     if (SUCCEEDED(
-      secondary_direct_sound_buffer->lpVtbl->GetCurrentPosition(&play_cursor, &write_cursor)
+      secondary_direct_sound_buffer->lpVtbl->GetCurrentPosition(secondary_direct_sound_buffer, &play_cursor, &write_cursor)
     ))
     {
       DWORD byte_to_lock = running_sample_index * bytes_per_sample % secondary_buffer_size;
@@ -719,6 +719,7 @@ int WINAPI WinMain(
 
       if (SUCCEEDED(
         secondary_direct_sound_buffer->lpVtbl->Lock(
+          secondary_direct_sound_buffer,
           byte_to_lock,
           bytes_to_write,
           &region1,
@@ -746,7 +747,7 @@ int WINAPI WinMain(
           *sample_out++ = sample_value;
         }
 
-        secondary_direct_sound_buffer->lpVtbl->Unlock(region1, region1_size, region2, region2_size);
+        secondary_direct_sound_buffer->lpVtbl->Unlock(secondary_direct_sound_buffer, region1, region1_size, region2, region2_size);
       }
     }
 
@@ -831,7 +832,9 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
         {
           OutputDebugStringA("D\n");
         }
-        else if (vkCode == 'Q') {}
+        else if (vkCode == 'Q') {
+          running = false;
+        }
         else if (vkCode == 'E') {}
         else if (vkCode == VK_UP) {}
         else if (vkCode == VK_DOWN) {}
