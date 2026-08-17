@@ -68,6 +68,9 @@ u32 xorshift32(void)
 #  define GetlParamX(lp) ((int)(short)LOWORD(lp))
 #  define GetlParamY(lp) ((int)(short)HIWORD(lp))
 
+// DirectSound variables
+global IDirectSoundBuffer secondary_direct_sound_buffer;
+
 /*
   Device-Independent Bitmaps (DIB)
   https://learn.microsoft.com/en-us/windows/win32/gdi/device-independent-bitmaps
@@ -199,8 +202,7 @@ internal void win32_init_direct_sound(
       buffer_description.dwBufferBytes = buffer_size;
       buffer_description.lpwfxFormat   = &wave_format;
 
-      IDirectSoundBuffer* secondary_buffer;
-      if (SUCCEEDED(DirectSound->lpVtbl->CreateSoundBuffer(DirectSound, &buffer_description, &secondary_buffer, 0)))
+      if (SUCCEEDED(DirectSound->lpVtbl->CreateSoundBuffer(DirectSound, &buffer_description, &secondary_direct_sound_buffer, 0)))
       {
         OutputDebugStringA("Secondary DirectSound buffer created Successfully.\n");
       }
@@ -606,10 +608,16 @@ int WINAPI WinMain(
   s32 samples_per_second    = 48000;
   s32 bytes_per_sample      = sizeof(s16) * 2;
   s32 secondary_buffer_size = 2 * samples_per_second * bytes_per_sample;
+  u32 running_sample_index = 0;
+  s32 toneHz = 256;
+  s32 square_wave_period = samples_per_second / toneHz;
+  s32 half_square_wave_period = square_wave_period / 2;
+  s32 tone_volume = 3000;
 
   win32_init_direct_sound(
       window_handle, samples_per_second, secondary_buffer_size
   );
+  secondary_direct_sound_buffer->lpVtbl->Play(0, 0, DSBPLAY_LOOPING);
 
   while (running)
   {
@@ -672,7 +680,7 @@ int WINAPI WinMain(
       // XInputSetState(0, &xinput_vibration);
     }
 
-    // GDI Drawing logic {{{
+    // GDI Drawing logic
 
     //draw_random_gradient(win32_offscreen_buffer.pixels, win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset, y_offset);
     draw_snow(
@@ -680,6 +688,67 @@ int WINAPI WinMain(
         win32_offscreen_buffer.width,
         win32_offscreen_buffer.height
     );
+
+    // DirectSound API logic
+    DWORD play_cursor;
+    DWORD write_cursor;
+
+    if (SUCCEEDED(
+      secondary_direct_sound_buffer->lpVtbl->GetCurrentPosition(&play_cursor, &write_cursor)
+    ))
+    {
+      DWORD byte_to_lock = running_sample_index * bytes_per_sample % secondary_buffer_size;
+      DWORD bytes_to_write;
+
+      if (byte_to_lock > play_cursor)
+      {
+        // play cursor is behind
+        bytes_to_write = secondary_buffer_size - byte_to_lock; // region 1
+        bytes_to_write += play_cursor;                         // region 2
+      }
+      else
+      {
+        // play cursor is in front
+        bytes_to_write = play_cursor - byte_to_lock; // region 1
+      }
+
+      VOID *region1;
+      DWORD region1_size;
+      VOID *region2;
+      DWORD region2_size;
+
+      if (SUCCEEDED(
+        secondary_direct_sound_buffer->lpVtbl->Lock(
+          byte_to_lock,
+          bytes_to_write,
+          &region1,
+          &region1_size,
+          &region2,
+          &region2_size,
+          0
+        )
+      ))
+      {
+        s16 *sample_out = (s16 *)region1;
+        DWORD region1_sample_count = region1_size / bytes_per_sample;
+        for (DWORD sampleIndex = 0; sampleIndex < region1_sample_count; sampleIndex += 1)
+        {
+          s16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
+          *sample_out++ = sample_value;
+          *sample_out++ = sample_value;
+        }
+        sample_out = (s16 *)region2;
+        DWORD region2_sample_count = region2_size / bytes_per_sample;
+        for (DWORD sampleIndex = 0; sampleIndex < region2_sample_count; sampleIndex += 1)
+        {
+          s16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
+          *sample_out++ = sample_value;
+          *sample_out++ = sample_value;
+        }
+
+        secondary_direct_sound_buffer->lpVtbl->Unlock(region1, region1_size, region2, region2_size);
+      }
+    }
 
     Win32WindowDimensions dims = win32_get_window_dimensions(window_handle);
     win32_display_buffer_in_window(&win32_offscreen_buffer, device_context, dims.width, dims.height);
@@ -706,7 +775,6 @@ int WINAPI WinMain(
     //     window_handle
     //); //
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatewindow
-    //  }}}
   }
 
   return msg.wParam;
