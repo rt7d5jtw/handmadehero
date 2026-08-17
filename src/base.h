@@ -25,12 +25,32 @@ typedef int16_t s16;
 typedef int32_t s32;
 typedef int64_t s64;
 
+typedef float f32;
+typedef double f64;
+
 typedef s8 b8;
 typedef s16 b16;
 typedef s32 b32;
 typedef s64 b64;
 
 typedef size_t usize;
+
+// Minimum and Maximum values
+#  define Min(a, b) ( ((a) < (b)) ? (a) : (b) )
+#  define Max(a, b) ( ((a) > (b)) ? (a) : (b) )
+
+/**
+ * Clamp(value, min, max)
+ * Limit the value to given minimal and maximal range
+ */
+#  define Clamp(value, min, max) ( ((value) < (min)) ? (min) : ((max) < (value)) ? (max) : (value) )
+
+/**
+ * ClampTop(value, limit)
+ * Caps a value at a specified maximum ceiling.
+ * Use when you do not care about a minimum floor limit.
+ */
+#  define ClampTop(value, limit) Min(value, limit)
 
 // packed structs macro
 // --------------------
