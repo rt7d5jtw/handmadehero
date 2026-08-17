@@ -14,17 +14,20 @@ endif()
 # NOTE: target name is different from project name
 #       target name is one created with add_executable, add_library or add_custom_target
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  # Link with X11
+if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+  # Find required packages
   find_package(X11 REQUIRED)
-  link_libraries(${X11_LIBRARIES})
-  include_directories(${X11_INCLUDE_DIR})
-  # https://cmake.org/cmake/help/latest/command/target_link_libraries.html
+  find_package(ALSA REQUIRED)
+
+  # Include their header directories
+  include_directories(${X11_INCLUDE_DIR} ${ALSA_INCLUDE_DIRS})
+
+  # Link the libraries to your executable
   target_link_libraries(
     "${PROJECT_NAME}"
     PRIVATE
     ${X11_LIBRARIES}
-    -lX11
+    ${ALSA_LIBRARIES}
     $<$<NOT:$<C_COMPILER_ID:MSVC>>:-fsanitize=address>
   )
 endif()
