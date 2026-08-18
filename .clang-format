@@ -11,11 +11,12 @@ BraceWrapping:
   BeforeElse: true
 NamespaceIndentation: None
 QualifierAlignment: Right
+AllowShortEnumsOnASingleLine: true
 AllowShortIfStatementsOnASingleLine: false
 IndentCaseLabels: true
 IndentWidth: 2
-PointerAlignment: Left
 TabWidth: 2
+PointerAlignment: Left
 BinPackArguments: false
 BinPackParameters: false
 AlignAfterOpenBracket: BlockIndent
@@ -23,9 +24,10 @@ AlignConsecutiveMacros: true
 AlignConsecutiveAssignments: true
 AlignConsecutiveDeclarations: false
 AlignOperands: true
+PenaltyBreakAssignment: 10000
 AllowShortBlocksOnASingleLine: true
 AllowShortFunctionsOnASingleLine: false
-ColumnLimit: 80
+ColumnLimit: 0
 KeepEmptyLinesAtTheStartOfBlocks: false
 SortIncludes: false
 SpaceAfterCStyleCast: false
