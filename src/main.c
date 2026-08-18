@@ -70,7 +70,7 @@ u32 xorshift32(void)
 #  define GetlParamY(lp) ((int)(short)HIWORD(lp))
 
 // DirectSound variables
-global IDirectSoundBuffer *secondary_direct_sound_buffer;
+global IDirectSoundBuffer* secondary_direct_sound_buffer;
 
 /*
   Device-Independent Bitmaps (DIB)
@@ -153,15 +153,15 @@ internal void win32_load_xinput(void)
 typedef DIRECT_SOUND_CREATE(direct_sound_create);
 
 internal void win32_init_direct_sound(
-  HWND window_handle,
-  s32 samples_per_second,
-  s32 buffer_size
+    HWND window_handle,
+    s32 samples_per_second,
+    s32 buffer_size
 )
 {
   HMODULE directSoundLibrary = LoadLibraryA("dsound.dll");
   if (directSoundLibrary)
   {
-    direct_sound_create* DirectSoundCreate = (direct_sound_create*) GetProcAddress(directSoundLibrary, "DirectSoundCreate");
+    direct_sound_create* DirectSoundCreate = (direct_sound_create*)GetProcAddress(directSoundLibrary, "DirectSoundCreate");
     IDirectSound* DirectSound;
 
     if (DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &DirectSound, 0)))
@@ -366,7 +366,8 @@ win32_resize_bitmap(Win32_OffscreenBuffer* offscreen_buffer, LPARAM lParam)
   // https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
 
   // Delete already existing bitmap
-  if (offscreen_buffer->bitmap_handle) {
+  if (offscreen_buffer->bitmap_handle)
+  {
     DeleteObject(offscreen_buffer->bitmap_handle);
   }
 
@@ -604,17 +605,17 @@ int WINAPI WinMain(
   GetClientRect(window_handle, &rect);
   client_width = rect.right - rect.left;
 
-  u32 x_offset              = 0;
-  u32 y_offset              = 0;
-  s32 samples_per_second    = 48000;
-  s32 bytes_per_sample      = sizeof(s16) * 2;
-  s32 secondary_buffer_size = 2 * samples_per_second * bytes_per_sample;
-  u32 running_sample_index = 0;
-  s32 toneHz = 256;
-  s32 square_wave_period = samples_per_second / toneHz;
+  u32 x_offset                = 0;
+  u32 y_offset                = 0;
+  s32 samples_per_second      = 48000;
+  s32 bytes_per_sample        = sizeof(s16) * 2;
+  s32 secondary_buffer_size   = 2 * samples_per_second * bytes_per_sample;
+  u32 running_sample_index    = 0;
+  s32 toneHz                  = 256;
+  s32 square_wave_period      = samples_per_second / toneHz;
   s32 half_square_wave_period = square_wave_period / 2;
-  s32 tone_volume = 1500;
-  b32 sound_is_playing = 0;
+  s32 tone_volume             = 1500;
+  b32 sound_is_playing        = 0;
 
   win32_init_direct_sound(
       window_handle, samples_per_second, secondary_buffer_size
@@ -695,8 +696,8 @@ int WINAPI WinMain(
     DWORD write_cursor;
 
     if (SUCCEEDED(
-      secondary_direct_sound_buffer->lpVtbl->GetCurrentPosition(secondary_direct_sound_buffer, &play_cursor, &write_cursor)
-    ))
+            secondary_direct_sound_buffer->lpVtbl->GetCurrentPosition(secondary_direct_sound_buffer, &play_cursor, &write_cursor)
+        ))
     {
       DWORD byte_to_lock = running_sample_index * bytes_per_sample % secondary_buffer_size;
       DWORD bytes_to_write;
@@ -713,39 +714,39 @@ int WINAPI WinMain(
         bytes_to_write = play_cursor - byte_to_lock; // region 1
       }
 
-      VOID *region1;
+      VOID* region1;
       DWORD region1_size;
-      VOID *region2;
+      VOID* region2;
       DWORD region2_size;
 
       if (SUCCEEDED(
-        secondary_direct_sound_buffer->lpVtbl->Lock(
-          secondary_direct_sound_buffer,
-          byte_to_lock,
-          bytes_to_write,
-          &region1,
-          &region1_size,
-          &region2,
-          &region2_size,
-          0
-        )
-      ))
+              secondary_direct_sound_buffer->lpVtbl->Lock(
+                  secondary_direct_sound_buffer,
+                  byte_to_lock,
+                  bytes_to_write,
+                  &region1,
+                  &region1_size,
+                  &region2,
+                  &region2_size,
+                  0
+              )
+          ))
       {
-        s16 *sample_out = (s16 *)region1;
+        s16* sample_out            = (s16*)region1;
         DWORD region1_sample_count = region1_size / bytes_per_sample;
         for (DWORD sampleIndex = 0; sampleIndex < region1_sample_count; sampleIndex += 1)
         {
           s16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
-          *sample_out++ = sample_value;
-          *sample_out++ = sample_value;
+          *sample_out++    = sample_value;
+          *sample_out++    = sample_value;
         }
-        sample_out = (s16 *)region2;
+        sample_out                 = (s16*)region2;
         DWORD region2_sample_count = region2_size / bytes_per_sample;
         for (DWORD sampleIndex = 0; sampleIndex < region2_sample_count; sampleIndex += 1)
         {
           s16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
-          *sample_out++ = sample_value;
-          *sample_out++ = sample_value;
+          *sample_out++    = sample_value;
+          *sample_out++    = sample_value;
         }
 
         secondary_direct_sound_buffer->lpVtbl->Unlock(secondary_direct_sound_buffer, region1, region1_size, region2, region2_size);
@@ -838,7 +839,8 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
         {
           OutputDebugStringA("D\n");
         }
-        else if (vkCode == 'Q') {
+        else if (vkCode == 'Q')
+        {
           running = false;
         }
         else if (vkCode == 'E') {}
@@ -954,7 +956,8 @@ global bool running              = true;
  * 0 -> "draw gradient mode"
  * 1 -> "draw white background for drawing"
  */
-enum GUI_MODE { MODE_GRADIENT_ANIMATION = 0, MODE_DRAWING = 1 };
+enum GUI_MODE { MODE_GRADIENT_ANIMATION = 0,
+                MODE_DRAWING            = 1 };
 
 global enum GUI_MODE current_gui_mode = MODE_GRADIENT_ANIMATION;
 
@@ -1250,18 +1253,18 @@ int main(void)
   u64 x_offset = 0;
   u64 y_offset = 0;
 
-  u64 SAMPLE_RATE = 48000;
-  s16 samples[48000 * 2] = {0};
-  u32 running_sample_index = 0;
-  s32 toneHz = 256;
-  s32 square_wave_period = SAMPLE_RATE / toneHz;
+  u64 SAMPLE_RATE             = 48000;
+  s16 samples[48000 * 2]      = {0};
+  u32 running_sample_index    = 0;
+  s32 toneHz                  = 256;
+  s32 square_wave_period      = SAMPLE_RATE / toneHz;
   s32 half_square_wave_period = square_wave_period / 2;
-  s32 tone_volume = 3000;
-  u32 audio_channels = 2;
+  s32 tone_volume             = 3000;
+  u32 audio_channels          = 2;
 
   // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga8340c7dc0ac37f37afe5e7c21d6c528b
-  snd_pcm_t *pcm_handle = NULL;
-  int alsa_open = snd_pcm_open(&pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
+  snd_pcm_t* pcm_handle = NULL;
+  int alsa_open         = snd_pcm_open(&pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
 
   if (alsa_open < 0)
   {
@@ -1270,7 +1273,7 @@ int main(void)
   else
   {
     // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga1ca0dc120a484965e26cabf966502330
-    snd_pcm_hw_params_t *pcm_hardware_configuration;
+    snd_pcm_hw_params_t* pcm_hardware_configuration;
     snd_pcm_hw_params_alloca(&pcm_hardware_configuration);
     snd_pcm_hw_params_any(pcm_handle, pcm_hardware_configuration);
     snd_pcm_hw_params_set_access(pcm_handle, pcm_hardware_configuration, SND_PCM_ACCESS_RW_INTERLEAVED);
@@ -1525,10 +1528,13 @@ int main(void)
 
       if (frames_ready < 0)
       {
-        if (frames_ready== -EPIPE) {
-          fprintf (stderr, "[ALSA] Buffer undderrun (xrun) occurred. Recovering...\n");
+        if (frames_ready == -EPIPE)
+        {
+          fprintf(stderr, "[ALSA] Buffer undderrun (xrun) occurred. Recovering...\n");
           snd_pcm_prepare(pcm_handle);
-        } else {
+        }
+        else
+        {
           fprintf(stderr, "[ALSA] Unknown ALSA avail update return value (%ld)\n", frames_ready);
         }
 
@@ -1539,14 +1545,14 @@ int main(void)
       if (frames_ready > 0)
       {
         frames_ready    = ClampTop(frames_ready, 48000);
-        s16 *sample_out = samples;
+        s16* sample_out = samples;
 
         // Generate audio frames
         for (snd_pcm_sframes_t idx = 0; idx < frames_ready; idx += 1)
         {
           s16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
-          *sample_out++ = sample_value; // Left channel
-          *sample_out++ = sample_value; // Right channel
+          *sample_out++    = sample_value; // Left channel
+          *sample_out++    = sample_value; // Right channel
         }
 
         snd_pcm_sframes_t frames_written = snd_pcm_writei(pcm_handle, samples, frames_ready);
@@ -1601,7 +1607,6 @@ int main(void)
 
   // https://tronche.com/gui/x/xlib/display/XCloseDisplay.html
   XCloseDisplay(mainDisplay);
-
 
   return 0;
 }
