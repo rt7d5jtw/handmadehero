@@ -614,11 +614,11 @@ int WINAPI WinMain(
   s32 square_wave_period = samples_per_second / toneHz;
   s32 half_square_wave_period = square_wave_period / 2;
   s32 tone_volume = 1500;
+  b32 sound_is_playing = 0;
 
   win32_init_direct_sound(
       window_handle, samples_per_second, secondary_buffer_size
   );
-  secondary_direct_sound_buffer->lpVtbl->Play(secondary_direct_sound_buffer, 0, 0, DSBPLAY_LOOPING);
 
   while (running)
   {
@@ -750,6 +750,11 @@ int WINAPI WinMain(
 
         secondary_direct_sound_buffer->lpVtbl->Unlock(secondary_direct_sound_buffer, region1, region1_size, region2, region2_size);
       }
+    }
+    if (!sound_is_playing)
+    {
+      secondary_direct_sound_buffer->lpVtbl->Play(0, 0, DSBPLAY_LOOPING);
+      sound_is_playing = 1;
     }
 
     Win32WindowDimensions dims = win32_get_window_dimensions(window_handle);
