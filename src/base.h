@@ -35,6 +35,8 @@ typedef s64 b64;
 
 typedef size_t usize;
 
+global f32 PI_F32 = 3.14159265359f;
+
 // Minimum and Maximum values
 #  define Min(a, b) ( ((a) < (b)) ? (a) : (b) )
 #  define Max(a, b) ( ((a) > (b)) ? (a) : (b) )
