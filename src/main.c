@@ -269,7 +269,7 @@ internal void win32_fill_sound_buffer(
     DWORD region1_sample_count = region1_size / sound_output->bytes_per_sample;
     for (DWORD sampleIndex = 0; sampleIndex < region1_sample_count; sampleIndex += 1)
     {
-      f32 sine_value   = sinf(time);
+      f32 sine_value   = sinf(sound_output->t_sine);
       s16 sample_value = (s16)(sine_value * sound_output->tone_volume);
       *sample_out++    = sample_value;
       *sample_out++    = sample_value;
@@ -691,7 +691,7 @@ int WINAPI WinMain(
 
   win32_init_directsound(window_handle, sound_output.samples_per_second, sound_output.secondary_buffer_size);
   win32_fill_sound_buffer(&sound_output, 0, (sound_output.latency_sample_count * sound_output.bytes_per_sample));
-  secondary_directsound_buffer->play(&secondary_directsound_buffer, 0, 0, DSBPLAY_LOOPING);
+  secondary_directsound_buffer->Play(&secondary_directsound_buffer, 0, 0, DSBPLAY_LOOPING);
 
     if (!sound_is_playing)
     {
@@ -798,7 +798,7 @@ int WINAPI WinMain(
         &sound_output,
         byte_to_lock,
         bytes_to_write
-      )
+      );
 
     }
 
