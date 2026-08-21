@@ -4,7 +4,6 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <math.h>
 
 #include "base.h"
@@ -983,6 +982,7 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 #  include <sys/mman.h>
 #  include <sys/syscall.h>
 #  include <unistd.h>
+#  include <math.h>
 
 #  include <X11/Xlib.h>
 #  include <X11/Xutil.h>
@@ -992,9 +992,21 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 
 #  include "bmp.h"
 
-b32 keyboard[256]               = {0};
+typedef struct LinuxSoundOutput LinuxSoundOutput;
+struct LinuxSoundOutput
+{
+  int samples_per_second;
+  int bytes_per_sample;
+  u32 running_sample_index;
+  int tone_hz;
+  int tone_volume;
+  int wave_period;
+  f32 t_sine;
+};
+
+b32 keyboard[256]                = {0};
 global usize current_buffer_size = 0;
-global b32 running              = true;
+global b32 running               = true;
 
 /* GUI MODE:
  * 0 -> "draw gradient mode"
@@ -1018,8 +1030,10 @@ global enum GUI_MODE current_gui_mode = MODE_GRADIENT_ANIMATION;
 
 void x11_clear_buffer(XImage* image, u64 color)
 {
-  if (!image)
-    return;
+  assert(
+      image != NULL && image->data != NULL &&
+      "XImage and XImage buffer must not be null"
+  );
 
   int width        = image->width;
   int height       = image->height;
@@ -1106,9 +1120,9 @@ void draw_random_gradient(u64 x_offset, u64 y_offset, XImage* image)
 
       // NOTE: explicitly packing 32-bits, BGRA/BGR packing assumed, X11's byte
       // order can vary.
-      u32 packed_colors = (alpha << 24) | (red << 16) | (green << 8) | blue;
+      u32 packed_channels = (alpha << 24) | (red << 16) | (green << 8) | blue;
       // direct memory write
-      *pixel++ = packed_colors;
+      *pixel++ = packed_channels;
     }
   }
 }
@@ -1192,11 +1206,12 @@ int main(void)
   u32 attributeValueMask =
       CWBackPixmap | CWEventMask |
       CWBitGravity; // tell x11 to look at background_pixmap and event_mask
+
   XSetWindowAttributes windowAttributes = {0};
-  windowAttributes.background_pixmap =
-      None; // prevent flickering by suppressing erase
-  windowAttributes.background_pixel = DARK_GREEN;
-  windowAttributes.event_mask =
+
+  windowAttributes.background_pixmap = None; // prevent flickering by suppressing erase
+  windowAttributes.background_pixel  = DARK_GREEN;
+  windowAttributes.event_mask        =
       KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask |
       ButtonReleaseMask | Button1MotionMask |
       StructureNotifyMask; // StructureNotifyMask for resizing
@@ -1204,9 +1219,11 @@ int main(void)
   // XOpenDisplay https://linux.die.net/man/3/xopendisplay
   // Open connection with the X server
   Display* mainDisplay = XOpenDisplay(0);
+
   // XDefaultRootWindow
   // https://tronche.com/gui/x/xlib/display/display-macros.html#DefaultRootWindow
   Window rootWindow = XDefaultRootWindow(mainDisplay);
+
   // XCreateSimpleWindow
   // https://tronche.com/gui/x/xlib/window/XCreateWindow.html XCreateWindow
   // https://tronche.com/gui/x/xlib/window/XCreateWindow.html
@@ -1297,13 +1314,17 @@ int main(void)
   u64 x_offset = 0;
   u64 y_offset = 0;
 
-  u64 SAMPLE_RATE             = 48000;
-  s16 samples[48000 * 2]      = {0};
-  u32 running_sample_index    = 0;
-  s32 toneHz                  = 256;
-  s32 wave_period             = SAMPLE_RATE / toneHz;
-  s32 tone_volume             = 3000;
-  u32 audio_channels          = 2;
+  LinuxSoundOutput sound_output     = {0};
+  sound_output.samples_per_second   = 48000;
+  sound_output.bytes_per_sample     = sizeof(s16) * 2;
+  sound_output.running_sample_index = 0;
+  sound_output.tone_hz              = 256;
+  sound_output.tone_volume          = 3000;
+  sound_output.wave_period          = sound_output.samples_per_second / sound_output.tone_hz;
+  sound_output.t_sine               = 0.0f;
+
+  s16 samples[48000 * 2] = {0};
+  u32 audio_channels     = 2;
 
   // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga8340c7dc0ac37f37afe5e7c21d6c528b
   snd_pcm_t* pcm_handle = NULL;
@@ -1323,7 +1344,7 @@ int main(void)
     snd_pcm_hw_params_set_format(pcm_handle, pcm_hardware_configuration, SND_PCM_FORMAT_S16_LE);
 
     snd_pcm_hw_params_set_channels(pcm_handle, pcm_hardware_configuration, audio_channels);
-    snd_pcm_hw_params_set_rate(pcm_handle, pcm_hardware_configuration, SAMPLE_RATE, 0);
+    snd_pcm_hw_params_set_rate(pcm_handle, pcm_hardware_configuration, sound_output.samples_per_second, 0);
     snd_pcm_hw_params_set_periods(pcm_handle, pcm_hardware_configuration, 10, 0);
     snd_pcm_hw_params_set_period_time(pcm_handle, pcm_hardware_configuration, 100000, 0);
 
@@ -1587,15 +1608,20 @@ int main(void)
 
       if (frames_ready > 0)
       {
-        frames_ready    = ClampTop(frames_ready, 48000);
+        frames_ready    = ClampTop(frames_ready, 2000);
         s16* sample_out = samples;
 
         // Generate audio frames
         for (snd_pcm_sframes_t idx = 0; idx < frames_ready; idx += 1)
         {
-          s16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
+          f32 sine_value   = sinf(sound_output.t_sine);
+          s16 sample_value = (s16)(sine_value * sound_output.tone_volume);
+
           *sample_out++    = sample_value; // Left channel
           *sample_out++    = sample_value; // Right channel
+
+          sound_output.t_sine += (2.0f * PI_F32 * 1.0) / (f32)sound_output.wave_period;
+          ++sound_output.running_sample_index;
         }
 
         snd_pcm_sframes_t frames_written = snd_pcm_writei(pcm_handle, samples, frames_ready);

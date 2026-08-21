@@ -28,6 +28,7 @@ if (CMAKE_SYSTEM_NAME MATCHES "Linux")
     PRIVATE
     ${X11_LIBRARIES}
     ${ALSA_LIBRARIES}
+    m
     $<$<NOT:$<C_COMPILER_ID:MSVC>>:-fsanitize=address>
   )
 endif()
