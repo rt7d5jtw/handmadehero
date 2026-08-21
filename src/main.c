@@ -104,7 +104,7 @@ struct Win32WindowDimensions
 };
 
 typedef struct Win32SoundOutput Win32SoundOutput;
-struct win32_sound_output
+struct Win32SoundOutput
 {
   int samples_per_second;
   int bytes_per_sample;
@@ -281,7 +281,7 @@ internal void win32_fill_sound_buffer(
     DWORD region2_sample_count = region2_size / sound_output->bytes_per_sample;
     for (DWORD sampleIndex = 0; sampleIndex < region2_sample_count; sampleIndex += 1)
     {
-      f32 sine_value   = sinf(time);
+      f32 sine_value   = sinf(sound_output->t_sine);
       s16 sample_value = (s16)(sine_value * sound_output->tone_volume);
       *sample_out++    = sample_value;
       *sample_out++    = sample_value;
@@ -679,7 +679,7 @@ int WINAPI WinMain(
   u32 x_offset                = 0;
   u32 y_offset                = 0;
 
-  Win32SoundOutput sound_output     = {};
+  Win32SoundOutput sound_output      = {0};
   sound_output.samples_per_second    = 48000;
   sound_output.bytes_per_sample      = sizeof(s16) * 2;
   sound_output.secondary_buffer_size = 2 * sound_output.samples_per_second * sound_output.bytes_per_sample;
@@ -689,16 +689,17 @@ int WINAPI WinMain(
   sound_output.wave_period           = sound_output.samples_per_second / sound_output.tone_hz;
   sound_output.latency_sample_count  = sound_output.samples_per_second / 15;
 
+  b32 sound_is_playing = 0;
+
   win32_init_directsound(window_handle, sound_output.samples_per_second, sound_output.secondary_buffer_size);
   win32_fill_sound_buffer(&sound_output, 0, (sound_output.latency_sample_count * sound_output.bytes_per_sample));
-  secondary_directsound_buffer->Play(&secondary_directsound_buffer, 0, 0, DSBPLAY_LOOPING);
+  secondary_directsound_buffer->lpVtbl->Play(&secondary_directsound_buffer, 0, 0, DSBPLAY_LOOPING);
 
-    if (!sound_is_playing)
-    {
-      secondary_directsound_buffer->lpVtbl->Play(0, 0, DSBPLAY_LOOPING);
-      sound_is_playing = 1;
-    }
-
+  if (!sound_is_playing)
+  {
+    secondary_directsound_buffer->lpVtbl->Play(&secondary_directsound_buffer, 0, 0, DSBPLAY_LOOPING);
+    sound_is_playing = 1;
+  }
 
   while (running)
   {
@@ -778,14 +779,14 @@ int WINAPI WinMain(
     HRESULT directsound_cursor_positions = secondary_directsound_buffer->lpVtbl->GetCurrentPosition(secondary_directsound_buffer, &play_cursor, &write_cursor);
     if (sound_is_playing && SUCCEEDED(directsound_cursor_positions))
     {
-      DWORD byte_to_lock = (sound_output->running_sample_index * sound_output->bytes_per_sample) % sound_output->secondary_buffer_size;
+      DWORD byte_to_lock = (sound_output.running_sample_index * sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
       DWORD target_cursor = ((play_cursor + (sound_output.latency_sample_count * sound_output.bytes_per_sample)) % sound_output.secondary_buffer_size);
       DWORD bytes_to_write;
 
       if (byte_to_lock > target_cursor)
       {
         // play cursor is behind
-        bytes_to_write = sound_output->secondary_buffer_size - byte_to_lock; // region 1
+        bytes_to_write = sound_output.secondary_buffer_size - byte_to_lock; // region 1
         bytes_to_write += target_cursor;                         // region 2
       }
       else
