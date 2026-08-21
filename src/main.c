@@ -370,9 +370,7 @@ typedef wchar_t wchar;
 
 void draw_pixel(int x, int y, u32 color)
 {
-#  ifdef DEBUG
   DEBUG_LOG("Drawing pixel at [X: %d, Y: %d] with color: %u", x, y, color);
-#  endif
 
   u32* pixel = win32_offscreen_buffer.pixels;
   pixel += y * win32_offscreen_buffer.width + x;
