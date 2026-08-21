@@ -38,31 +38,6 @@ u32 xorshift32(void)
 #  include <windows.h>
 #  include <xinput.h>
 
-#  ifdef DEBUG
-
-#    define MACRO_STMT(__stmt__) \
-      do                         \
-      {                          \
-        __stmt__                 \
-      } while (0)
-#    define __TO_STR(str) #str
-
-/*
-  TCHAR         - _stprintf - OutputDebugString
-  CHAR/char     - sprintf   - OutputDebugStringA
-  WCHAR/wchar_t - swprintf  - OutputDebugStringW
-*/
-
-// debug print macro for win32
-#    define __win32_debug_print(argname, argvalue)                  \
-      MACRO_STMT(                                                   \
-          char dbg_msg[255] = {0};                                  \
-          sprintf(dbg_msg, __TO_STR(argname) " -> %d\n", argvalue); \
-          OutputDebugStringA(dbg_msg);                              \
-      )
-
-#  endif
-
 #  define WINDOW_WIDTH  1480
 #  define WINDOW_HEIGHT 860
 
@@ -396,8 +371,7 @@ typedef wchar_t wchar;
 void draw_pixel(int x, int y, u32 color)
 {
 #  ifdef DEBUG
-  __win32_debug_print(x, x);
-  __win32_debug_print(y, y);
+  DEBUG_LOG("Drawing pixel at [X: %d, Y: %d] with color: %u", x, y, color);
 #  endif
 
   u32* pixel = win32_offscreen_buffer.pixels;
@@ -1382,16 +1356,14 @@ int main(void)
     {
       XNextEvent(mainDisplay, &generalEvent);
 
-#  ifdef DEBUG
       if (generalEvent.type == KeyPress)
       {
-        printf("[DEBUG] KeyPress: %x\n", generalEvent.xkey.keycode);
+        DEBUG_LOG("[DEBUG] KeyPress: %x", generalEvent.xkey.keycode);
       }
       else
       {
-        printf("[DEBUG] X11 Event: %d\n", generalEvent.type);
+        DEBUG_LOG("[DEBUG] X11 Event: %d", generalEvent.type);
       }
-#  endif
 
       switch (generalEvent.type)
       {

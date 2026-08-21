@@ -1,11 +1,42 @@
 /* vi: foldmethod=marker
  */
+
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #pragma once
-#ifndef __BASELIB__
-#  define __BASELIB__
+
+/* Debug Print Macro for win32 and linux
+ * Usage:
+ *   DEBUG_LOG("Cursor positions - Play: %lu, Write: %lu", play_cursor, write_cursor);
+ *   DEBUG_LOG("Sine wave phase: %f", sound_output.t_sine);
+*/
+#ifdef DEBUG
+#  if defined(_WIN32)
+    // Windows Debug Logger
+#    define DEBUG_LOG(format, ...)                                        \
+      do                                                                  \
+      {                                                                   \
+        char dbg_msg[512] = {0};                                          \
+        snprintf(dbg_msg, sizeof(dbg_msg), format "\n", ##__VA_ARGS__);   \
+        OutputDebugStringA(dbg_msg);                                      \
+      } while (0)
+#  elif defined(__linux__)
+    // Linux Debug Logger
+#    define DEBUG_LOG(format, ...)                                        \
+      do                                                                  \
+      {                                                                   \
+        fprintf(stderr, "[DEBUG] " format "\n", ##__VA_ARGS__);           \
+      } while (0)
+#  else
+    // Unknown OS Fallback
+#    define DEBUG_LOG(format, ...)
+#  endif
+#else
+  // If we are in Release mode, DEBUG_LOG does nothing.
+  // The compiler will should erase these lines from the final build.
+#  define DEBUG_LOG(format, ...)
 #endif
 
 // searchable typecast
@@ -35,7 +66,7 @@ typedef s64 b64;
 
 typedef size_t usize;
 
-global f32 PI_F32 = 3.14159265359f;
+global const f32 PI_F32 = 3.14159265359f;
 
 // Minimum and Maximum values
 #  define Min(a, b) ( ((a) < (b)) ? (a) : (b) )
