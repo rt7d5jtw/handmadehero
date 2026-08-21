@@ -177,13 +177,14 @@ internal void win32_init_directsound(
   HMODULE directsound_library = LoadLibraryA("dsound.dll");
   if (directsound_library)
   {
+    // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708921(v=vs.85)
     direct_sound_create* DirectSoundCreate = (direct_sound_create*)GetProcAddress(directsound_library, "DirectSoundCreate");
     IDirectSound* DirectSound;
 
+    // Create and Initialize IDirectSound interface
+    // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708921(v=vs.85)
     if (DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &DirectSound, 0)))
     {
-      // SetFormat
-      // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708936(v=vs.85)
       WAVEFORMATEX wave_format    = {0};
       wave_format.wFormatTag      = WAVE_FORMAT_PCM;
       wave_format.nChannels       = 2;
@@ -194,7 +195,8 @@ internal void win32_init_directsound(
 
       // SetCooperativeLevel
       // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708948(v=vs.85)#remarks
-      if (SUCCEEDED(DirectSound->lpVtbl->SetCooperativeLevel(DirectSound, window_handle, DSSCL_PRIORITY)))
+      HRESULT directsound_cooperative_level = DirectSound->lpVtbl->SetCooperativeLevel(DirectSound, window_handle, DSSCL_PRIORITY);
+      if (SUCCEEDED(directsound_cooperative_level))
       {
         // Set buffer configuration for primary buffer
         // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee416820(v=vs.85)
@@ -205,9 +207,15 @@ internal void win32_init_directsound(
         // Create a primary buffer
         IDirectSoundBuffer* primary_sound_buffer;
 
-        if (SUCCEEDED(DirectSound->lpVtbl->CreateSoundBuffer(DirectSound, &buffer_description, &primary_sound_buffer, 0)))
+        // Create DirectSoundBuffer object to hold a sequence of audio samples
+        // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708943(v=vs.85)
+        HRESULT directsound_buffer = DirectSound->lpVtbl->CreateSoundBuffer(DirectSound, &buffer_description, &primary_sound_buffer, 0);
+        if (SUCCEEDED(directsound_buffer))
         {
-          if (SUCCEEDED(primary_sound_buffer->lpVtbl->SetFormat(primary_sound_buffer, &wave_format)))
+          // SetFormat - sets the format of the primary sound buffer
+          // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/mt708936(v=vs.85)
+          HRESULT directsound_format = primary_sound_buffer->lpVtbl->SetFormat(primary_sound_buffer, &wave_format);
+          if (SUCCEEDED(directsound_format))
           {
             OutputDebugStringA("Primary DirectSound buffer format was set.\n");
           }
@@ -220,7 +228,8 @@ internal void win32_init_directsound(
       buffer_description.dwBufferBytes = buffer_size;
       buffer_description.lpwfxFormat   = &wave_format;
 
-      if (SUCCEEDED(DirectSound->lpVtbl->CreateSoundBuffer(DirectSound, &buffer_description, &secondary_directsound_buffer, 0)))
+      HRESULT secondary_buffer = DirectSound->lpVtbl->CreateSoundBuffer(DirectSound, &buffer_description, &secondary_directsound_buffer, 0);
+      if (SUCCEEDED(secondary_buffer))
       {
         OutputDebugStringA("Secondary DirectSound buffer created Successfully.\n");
       }
@@ -369,12 +378,12 @@ void draw_random_gradient(
       u8 alpha = 0;
 
       // pack all four channels into the u32 in BGRA order
-      u32 packed_colors = (alpha << 24) | (red << 16) | (green << 8) | blue;
+      u32 packed_channels = (alpha << 24) | (red << 16) | (green << 8) | blue;
 
       // Write all the color channels for the pixel for this byte, and advance
       // the 4-byte pointer. NOTE: post-increment pixel++, after the assignment
       // is complete, advance the pixel pointer to the next memory location.
-      *pixel++ = packed_colors;
+      *pixel++ = packed_channels;
     }
 
     // Move the row pointer down by the pitch (stride) to start the next row
@@ -589,8 +598,7 @@ int WINAPI WinMain(
   windowClass.cbSize        = sizeof(WNDCLASSEX);
   windowClass.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
   windowClass.lpszClassName = window_class_name;
-  windowClass.lpfnWndProc =
-      win32WndProc; // Long Pointer to the Windows Procedure function
+  windowClass.lpfnWndProc   = win32WndProc; // Long Pointer to the Windows Procedure function
   windowClass.cbClsExtra    = 0;
   windowClass.cbWndExtra    = 0;
   windowClass.hInstance     = hInstance;
@@ -1052,6 +1060,8 @@ void x11_clear_buffer(XImage* image, u64 color)
 
 void x11_render_buffer(Display* display, Window window, GC gc, XImage* image)
 {
+  assert(image && display && window && gc && "Render parameters must not be null");
+
   if (image && display && window && gc)
   {
     XPutImage(
