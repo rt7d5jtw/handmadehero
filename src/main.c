@@ -693,11 +693,10 @@ int WINAPI WinMain(
 
   win32_init_directsound(window_handle, sound_output.samples_per_second, sound_output.secondary_buffer_size);
   win32_fill_sound_buffer(&sound_output, 0, (sound_output.latency_sample_count * sound_output.bytes_per_sample));
-  secondary_directsound_buffer->lpVtbl->Play(&secondary_directsound_buffer, 0, 0, DSBPLAY_LOOPING);
 
   if (!sound_is_playing)
   {
-    secondary_directsound_buffer->lpVtbl->Play(&secondary_directsound_buffer, 0, 0, DSBPLAY_LOOPING);
+    secondary_directsound_buffer->lpVtbl->Play(secondary_directsound_buffer, 0, 0, DSBPLAY_LOOPING);
     sound_is_playing = 1;
   }
 
