@@ -55,8 +55,7 @@ global IDirectSoundBuffer* secondary_directsound_buffer;
 // START OF GDI Drawing declarations {{{
 
 typedef struct Win32OffscreenBuffer Win32OffscreenBuffer;
-struct Win32OffscreenBuffer
-{
+struct Win32OffscreenBuffer {
   BITMAPINFO info;
   void* pixels; // pixel array for the bitmap
   u32 width;
@@ -71,15 +70,13 @@ struct Win32OffscreenBuffer win32_offscreen_buffer = {.bytes_per_pixel = 4};
 static int client_width;
 
 typedef struct Win32WindowDimensions Win32WindowDimensions;
-struct Win32WindowDimensions
-{
+struct Win32WindowDimensions {
   u32 width;
   u32 height;
 };
 
 typedef struct Win32SoundOutput Win32SoundOutput;
-struct Win32SoundOutput
-{
+struct Win32SoundOutput {
   int samples_per_second;
   int bytes_per_sample;
   int secondary_buffer_size;
@@ -225,10 +222,10 @@ internal Win32WindowDimensions win32_get_window_dimensions(HWND window_handle)
 }
 
 internal void win32_fill_sound_buffer(
-    Win32SoundOutput *sound_output,
+    Win32SoundOutput* sound_output,
     DWORD byte_to_lock,
     DWORD bytes_to_write
-    )
+)
 {
   VOID* region1;
   DWORD region1_size;
@@ -236,15 +233,15 @@ internal void win32_fill_sound_buffer(
   DWORD region2_size;
 
   HRESULT directsound_lock = secondary_directsound_buffer->lpVtbl->Lock(
-              secondary_directsound_buffer,
-              byte_to_lock,
-              bytes_to_write,
-              &region1,
-              &region1_size,
-              &region2,
-              &region2_size,
-              0
-          );
+      secondary_directsound_buffer,
+      byte_to_lock,
+      bytes_to_write,
+      &region1,
+      &region1_size,
+      &region2,
+      &region2_size,
+      0
+  );
 
   if (SUCCEEDED(directsound_lock))
   {
@@ -546,6 +543,11 @@ int WINAPI WinMain(
     int nCmdShow
 )
 {
+  // https://learn.microsoft.com/en-us/windows/win32/api/profileapi/nf-profileapi-queryperformancefrequency
+  LARGE_INTEGER perf_count_frequency_result;
+  QueryPerformanceFrequency(&perf_count_frequency_result);
+  s64 perf_count_frequency = perf_count_frequency_result.QuadPart;
+
   (void)pCmdLine;
   (void)hPrevInstance;
 
@@ -655,8 +657,8 @@ int WINAPI WinMain(
   GetClientRect(window_handle, &rect);
   client_width = rect.right - rect.left;
 
-  u32 x_offset                = 0;
-  u32 y_offset                = 0;
+  u32 x_offset = 0;
+  u32 y_offset = 0;
 
   Win32SoundOutput sound_output      = {0};
   sound_output.samples_per_second    = 48000;
@@ -678,6 +680,9 @@ int WINAPI WinMain(
     secondary_directsound_buffer->lpVtbl->Play(secondary_directsound_buffer, 0, 0, DSBPLAY_LOOPING);
     sound_is_playing = 1;
   }
+
+  LARGE_INTEGER last_counter;
+  QueryPerformanceCounter(&last_counter);
 
   while (running)
   {
@@ -757,7 +762,7 @@ int WINAPI WinMain(
     HRESULT directsound_cursor_positions = secondary_directsound_buffer->lpVtbl->GetCurrentPosition(secondary_directsound_buffer, &play_cursor, &write_cursor);
     if (sound_is_playing && SUCCEEDED(directsound_cursor_positions))
     {
-      DWORD byte_to_lock = (sound_output.running_sample_index * sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
+      DWORD byte_to_lock  = (sound_output.running_sample_index * sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
       DWORD target_cursor = ((play_cursor + (sound_output.latency_sample_count * sound_output.bytes_per_sample)) % sound_output.secondary_buffer_size);
       DWORD bytes_to_write;
 
@@ -774,11 +779,10 @@ int WINAPI WinMain(
       }
 
       win32_fill_sound_buffer(
-        &sound_output,
-        byte_to_lock,
-        bytes_to_write
+          &sound_output,
+          byte_to_lock,
+          bytes_to_write
       );
-
     }
 
     Win32WindowDimensions dims = win32_get_window_dimensions(window_handle);
@@ -806,6 +810,14 @@ int WINAPI WinMain(
     //     window_handle
     //); //
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatewindow
+
+    LARGE_INTEGER end_counter;
+    QueryPerformanceCounter(&end_counter);
+
+    s64 counter_elapsed = end_counter.QuadPart - last_counter.QuadPart;
+    s32 ms_per_frame = (s32)((1000*counter_elapsed) / perf_count_frequency);
+    DEBUG_LOG("ms/frame: %d ms", ms_per_frame);
+    last_counter = end_counter;
   }
 
   return msg.wParam;
@@ -840,7 +852,7 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_KEYDOWN:
     case WM_KEYUP: {
       // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
-      u32 vkCode   = wParam;
+      u32 vkCode  = wParam;
       b32 wasDown = ((lParam & (1 << 30)) != 0);
       b32 isDown  = ((lParam & (1 << 31)) == 0);
 
@@ -973,8 +985,7 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 #  include "bmp.h"
 
 typedef struct LinuxSoundOutput LinuxSoundOutput;
-struct LinuxSoundOutput
-{
+struct LinuxSoundOutput {
   int samples_per_second;
   int bytes_per_sample;
   u32 running_sample_index;
@@ -1193,7 +1204,7 @@ int main(void)
 
   windowAttributes.background_pixmap = None; // prevent flickering by suppressing erase
   windowAttributes.background_pixel  = DARK_GREEN;
-  windowAttributes.event_mask        =
+  windowAttributes.event_mask =
       KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask |
       ButtonReleaseMask | Button1MotionMask |
       StructureNotifyMask; // StructureNotifyMask for resizing
@@ -1597,8 +1608,8 @@ int main(void)
           f32 sine_value   = sinf(sound_output.t_sine);
           s16 sample_value = (s16)(sine_value * sound_output.tone_volume);
 
-          *sample_out++    = sample_value; // Left channel
-          *sample_out++    = sample_value; // Right channel
+          *sample_out++ = sample_value; // Left channel
+          *sample_out++ = sample_value; // Right channel
 
           sound_output.t_sine += (2.0f * PI_F32 * 1.0) / (f32)sound_output.wave_period;
           ++sound_output.running_sample_index;

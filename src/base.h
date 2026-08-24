@@ -65,6 +65,8 @@ typedef s32 b32;
 typedef s64 b64;
 
 typedef size_t usize;
+typedef intptr_t ssize;
+typedef uintptr_t uptr;
 
 global const f32 PI_F32 = 3.14159265359f;
 
