@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "base.h"
+#include "os.h"
+
+#pragma once
 
 #if defined(__linux__)
 #  include <sys/mman.h>
@@ -130,14 +133,14 @@ PACK(struct BitmapImage {
 /* debug print */
 void print_bmp_image_fields(BitmapImage);
 /* write 24 bit bmp file without color space information */
-void write_bmp_file(char*, u32, u32, u32, u32, u32, u8*);
+b32 write_bmp_file(char*, u32, u32, u32, u32, u32, u8*);
 BitmapImage read_bmp_file(char* filepath);
 
 void print_bmp_image_fields(BitmapImage bmp_image)
 {
-  printf(
+  DEBUG_LOG(
       "BMP Image { signature = %#010x, filesize = %#010x, offset = %#010x, "
-      "dib_header_size = %#010x, image_width = %d, image_height = %d }\n",
+      "dib_header_size = %#010x, image_width = %d, image_height = %d }",
       bmp_image.header.signature,
       bmp_image.header.filesize,
       bmp_image.header.offset,
@@ -147,7 +150,7 @@ void print_bmp_image_fields(BitmapImage bmp_image)
   );
 }
 
-void write_bmp_file(
+b32 write_bmp_file(
     char* filepath,
     u32 filesize,
     u32 offset,
@@ -180,100 +183,56 @@ void write_bmp_file(
       .data = data_buffer
   };
 
-  FILE* bmp_file = fopen(filepath, "wb+");
+  OS_Handle bmp_file = os_file_create(filepath);
 
-  if (bmp_file == NULL)
+  if (bmp_file.handle == cast(void*)-1)
   {
-    perror("new bmp file could not be created");
-    exit(EXIT_FAILURE);
+    DEBUG_LOG("Error: new BMP file could not be created at %s", filepath);
+    return 0;
   }
 
-  fwrite(&bmp_image.header, sizeof(BitmapHeader), 1, bmp_file);
-  fwrite(bmp_image.data, bmp_image.header.image_size, 1, bmp_file);
+  b32 header_written = os_file_write(bmp_file, &bmp_image.header, sizeof(BitmapHeader));
+  b32 data_written   = os_file_write(bmp_file, bmp_image.data, bmp_image.header.image_size);
+
+  if (!header_written || !data_written)
+  {
+    DEBUG_LOG("Error: Failed to completely write BMP data to %s", filepath);
+    os_file_close(bmp_file);
+    return 0;
+  }
+
+  DEBUG_LOG("Successfully wrote BMP to %s", filepath);
+
+  os_file_close(bmp_file);
+
+  return 1;
 }
 
 BitmapImage read_bmp_file(char* filepath)
 {
   BitmapImage bmp_image = {0};
-  FILE* file            = fopen(filepath, "rb");
+  OS_Handle file        = os_file_open(filepath);
 
-  if (file)
+  if (file.handle != cast(void*) - 1)
   {
-    fseek(file, 0, SEEK_END);
-    size_t filesize = ftell(file);
-    fseek(file, 0, SEEK_SET);
+     DEBUG_LOG("Successfully opened BMP: %s", filepath);
 
-    void* buffer = malloc(filesize + 1);
-    (void)buffer;
+     b32 header_ok = os_file_read(file, &bmp_image.header, sizeof(BitmapHeader));
 
-    // https://www.tutorialspoint.com/c_standard_library/c_function_fread.htm
-    // https://cplusplus.com/reference/cstdio/fread/
-    // FIX: read each section with fread
-    printf("size of BitmapImage struct -> %lu\n", sizeof(BitmapImage));
+     if (!header_ok)
+     {
+       DEBUG_LOG("Error: failed to read BMP header from %s", filepath);
+       os_file_close(file);
+       return bmp_image;
+     }
 
-    usize signature_result =
-        fread(&bmp_image.header.signature, sizeof(u16), 1, file);
-    if (signature_result != 1)
-      fprintf(stderr, "Error reading BMP file signature %s\n", filepath);
-    else
-      printf("BitmapImage.signature = %#010x\n", bmp_image.header.signature);
+    DEBUG_LOG("BitmapImage.signature = %#010x", bmp_image.header.signature);
+    DEBUG_LOG("BitmapImage.filesize = %d", bmp_image.header.filesize);
+    DEBUG_LOG("Bitmap data offset = %d", bmp_image.header.offset);
+    DEBUG_LOG("Image size = %d", bmp_image.header.image_size);
 
-    usize filesize_result =
-        fread(&bmp_image.header.filesize, sizeof(u32), 1, file);
-    if (filesize_result != 1)
-      fprintf(stderr, "Error reading BMP file size %s\n", filepath);
-    else
-      printf(
-          "BitmapImage.filesize = %#010x or %d\n",
-          bmp_image.header.filesize,
-          bmp_image.header.filesize
-      );
-
-    // reversed sections
-    fread(&bmp_image.header.reserved, sizeof(u16), 1, file);
-    fread(&bmp_image.header.reserved2, sizeof(u16), 1, file);
-
-    usize offset_result = fread(&bmp_image.header.offset, sizeof(u32), 1, file);
-    if (offset_result != 1)
-      fprintf(stderr, "Error reading BMP offset %s\n", filepath);
-    else
-      printf(
-          "bitmap data offset -> %#010x or %d\n",
-          bmp_image.header.offset,
-          bmp_image.header.offset
-      );
-
-    fread(&bmp_image.header.dib_header_size, sizeof(u32), 1, file);
-    fread(&bmp_image.header.image_width, sizeof(u32), 1, file);
-    fread(&bmp_image.header.image_height, sizeof(u32), 1, file);
-    fread(&bmp_image.header.number_of_color_planes, sizeof(u16), 1, file);
-    fread(&bmp_image.header.bits_per_pixel, sizeof(u16), 1, file);
-    fread(&bmp_image.header.compression_type, sizeof(u32), 1, file);
-    fread(&bmp_image.header.image_size, sizeof(u32), 1, file);
-    printf("image_size -> %d\n", bmp_image.header.image_size);
-
-    fread(&bmp_image.header.xresolution_ppm, sizeof(s32), 1, file);
-    fread(&bmp_image.header.yresolution_ppm, sizeof(s32), 1, file);
-
-    fread(&bmp_image.header.number_of_colors, sizeof(u32), 1, file);
-    fread(&bmp_image.header.important_colors, sizeof(u32), 1, file);
-
-    // fseek(file, 0, SEEK_SET);
-    fseek(file, bmp_image.header.offset, SEEK_SET);
-
-    // printf("file pos -> %ld\n", ftell(file));
-    // u8 first  = 0xb;
-    // u8 second = 0xb;
-    // u8 third  = 0xb;
-    // fread(&first, sizeof(u8), 1, file);
-    // printf("first byte -> %d\n", first);
-    // fread(&second, sizeof(u8), 1, file);
-    // printf("second byte -> %d\n", second);
-    // fread(&third, sizeof(u8), 1, file);
-    // printf("third byte -> %d\n", third);
-
-    // u8 mydata[192];
-    // u8* mydata;
+    // seek directly to the pixel data
+    os_file_seek(file, bmp_image.header.offset);
 
 #if defined(__linux__)
     // https://man7.org/linux/man-pages/man2/mmap.2.html
@@ -294,7 +253,7 @@ BitmapImage read_bmp_file(char* filepath)
     /* mmap flags */
     u32 mmap_flags = MAP_ANONYMOUS | MAP_PRIVATE;
 
-    bmp_image.data = (u8*)mmap(addr, mmap_len, mmap_prot, mmap_flags, -1, 0);
+    bmp_image.data = cast(u8*)mmap(addr, mmap_len, mmap_prot, mmap_flags, -1, 0);
 
     if (bmp_image.data == MAP_FAILED)
     {
@@ -317,69 +276,17 @@ BitmapImage read_bmp_file(char* filepath)
     }
 #endif
 
-    fread(bmp_image.data, sizeof(u8), bmp_image.header.image_size, file);
-
-    printf("\n");
-    for (u8 i = 0; i < bmp_image.header.image_size; i += 1)
+    b32 pixels_ok = os_file_read(file, bmp_image.data, bmp_image.header.image_size);
+    if (!pixels_ok)
     {
-      printf("pages[%d] -> %#010x\n", i, *(bmp_image.data + i));
+      DEBUG_LOG("Error: failed to read bmp pixel data.");
+    }
+    else
+    {
+      DEBUG_LOG("Successfully loaded %d bytes of pixel data!", bmp_image.header.image_size);
     }
 
-    FILE* new_bmp_file = fopen("test.bmp", "wb+");
-    if (new_bmp_file == NULL)
-    {
-      perror("new bmp file could not be created");
-      exit(EXIT_FAILURE);
-    }
-
-    printf("BitmapImage filesize -> %d\n", bmp_image.header.filesize);
-    printf(
-        "sizeof BitmapImage -> %lu\n",
-        sizeof(BitmapHeader) + bmp_image.header.image_size
-    );
-    // bmp_image.header.filesize = 0x37;
-    // bmp_image.header.offset   = 0x36;
-    // u8 color = 0xff;
-    // fwrite(&bmp_image.header, sizeof(BMPHeader), 1, new_bmp_file);
-    // fwrite(&color, sizeof(u32), 1, new_bmp_file);
-
-    fwrite(&bmp_image.header, sizeof(BitmapHeader), 1, new_bmp_file);
-    fwrite(bmp_image.data, bmp_image.header.image_size, 1, new_bmp_file);
-
-    u8* data = (u8*)malloc(sizeof(u32));
-
-    // #b48ead / rgb(180, 142, 173)
-    data[0] = 0xb4; // Red
-    data[1] = 0x8e; // Blue
-    data[2] = 0xad; // Green
-    data[3] = 0x0;
-
-    write_bmp_file(
-        "test_file.bmp",
-        bmp_image.header.filesize,
-        bmp_image.header.offset,
-        bmp_image.header.image_width,
-        bmp_image.header.image_height,
-        bmp_image.header.image_size,
-        data
-    );
-
-    // for (u8 i = 0; i < 192; i += 1) {
-    //   printf("mydata[%d] -> %#010x\n", i, mydata[i]);
-    // }
-    // fread(pages, sizeof(u8*), bmp_image.header.image_size, file);
-
-    // printf("0x1  -> %d\n", *(u8*)(pages + sizeof(u8) * 0));
-    // printf("0x2  -> %d\n", *(u8*)(pages + sizeof(u8) * 1));
-    // printf("0x3  -> %d\n", *(u8*)(pages + sizeof(u8) * 2));
-    // printf("0x18 -> %d\n", *(u8*)(pages + (sizeof(u8) * 23)));
-    // printf("mydata -> %d | %d | %d\n", mydata[0], mydata[1], mydata[2]);
-
-    // usize result = fread(&bmp_image, sizeof(BitmapImage), 1, file);
-    // if (result != 1) fprintf(stderr, "Error reading BMP file %s\n",
-    // filepath); else print_bmp_image_fields(bmp_image);
-
-    fclose(file);
+    os_file_close(file);
   }
 
   return bmp_image;
