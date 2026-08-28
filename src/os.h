@@ -26,8 +26,16 @@ struct OS_Handle
   void* handle;
 };
 
-OS_Handle os_file_open(const char* filepath);
-OS_Handle os_file_create(const char* filepath);
+typedef enum OS_AccessFlags
+{
+  OS_AccessFlags_Read    = (1 << 0), // r
+  OS_AccessFlags_Write   = (1 << 1), // w
+  OS_AccessFlags_Execute = (1 << 2), // x
+  OS_AccessFlags_Create  = (1 << 3)
+} OS_AccessFlags;
+
+OS_Handle os_file_open(const char* filepath, u32 flags);
+OS_Handle os_file_create(const char* filepath, u32 flags);
 b32 os_file_read(OS_Handle, void* buffer, u32 bytes_to_read);
 b32 os_file_write(OS_Handle file, const void* buffer, u32 bytes_to_write);
 void os_file_close(OS_Handle file);

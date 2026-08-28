@@ -70,6 +70,11 @@ typedef uintptr_t uptr;
 
 global const f32 PI_F32 = 3.14159265359f;
 
+#define enum8(name)  u8
+#define enum16(name) u16
+#define enum32(name) u32
+#define enum64(name) u64
+
 // Minimum and Maximum values
 #  define Min(a, b) ( ((a) < (b)) ? (a) : (b) )
 #  define Max(a, b) ( ((a) > (b)) ? (a) : (b) )
