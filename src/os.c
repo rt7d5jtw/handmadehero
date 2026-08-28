@@ -6,55 +6,6 @@
 #if defined(_WIN32)
 // Win32 implementation {{{
 
-OS_Handle os_file_create(const char* filepath, u32 flags)
-{
-  OS_Handle result = {0};
-  result.handle    = cast(void*)-1;
-
-  DWORD desired_access       = 0;
-  DWORD share_mode           = 0;
-  DWORD creation_disposition = OPEN_EXISTING;
-
-  if (flags & OS_AccessFlags_Read)
-  {
-    desired_access |= GENERIC_READ;
-    share_mode = FILE_SHARE_READ;
-  }
-
-  if (flags & OS_AccessFlags_Write)
-  {
-    desired_access |= GENERIC_WRITE;
-  }
-
-  if (flags & OS_AccessFlags_Execute)
-  {
-    desired_access |= GENERIC_EXECUTE;
-  }
-
-  if (flags & OS_AccessFlags_Create)
-  {
-    creation_disposition = CREATE_ALWAYS;
-  }
-
-  // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
-  HANDLE file_handle = CreateFileA(
-      filepath,
-      desired_access,
-      share_mode,
-      NULL,
-      creation_disposition,
-      FILE_ATTRIBUTE_NORMAL,
-      NULL
-      );
-
-  if (file_handle != INVALID_HANDLE_VALUE)
-  {
-    result.handle = file_handle;
-  }
-
-  return result;
-}
-
 OS_Handle os_file_open(const char* filepath, u32 flags)
 {
   OS_Handle result = {0};
@@ -67,7 +18,7 @@ OS_Handle os_file_open(const char* filepath, u32 flags)
   if (flags & OS_AccessFlags_Read)
   {
     desired_access |= GENERIC_READ;
-    share_mdoe = FILE_SHARE_READ;
+    share_mode = FILE_SHARE_READ;
   }
 
   if (flags & OS_AccessFlags_Write)
@@ -185,48 +136,6 @@ void os_file_seek(OS_Handle file, u32 offset)
 
 #elif defined(__linux__)
 // Linux implementation {{{
-
-OS_Handle os_file_create(const char* filepath, u32 flags)
-{
-  OS_Handle result = {0};
-  result.handle    = cast(void*)-1;
-
-  // Write only, create if doesnt exist, overwrite to 0 if it doesnt exist
-  int linux_flags     = 0;
-  int linux_mode      = 0644; // rw-r--r--
-
-  if ((flags & OS_AccessFlags_Read) && (flags & OS_AccessFlags_Write))
-  {
-    linux_flags |= O_RDWR;
-  }
-  else if (flags & OS_AccessFlags_Write)
-  {
-    linux_flags |= O_WRONLY;
-  }
-  else if (flags & OS_AccessFlags_Read)
-  {
-    linux_flags |= O_RDONLY;
-  }
-
-  if (flags & OS_AccessFlags_Create)
-  {
-    linux_flags |= O_CREAT | O_TRUNC;
-  }
-
-  if (flags & OS_AccessFlags_Execute)
-  {
-    linux_mode = 0755; // rwxr-xr-x
-  }
-
-  int file_descriptor = open(filepath, linux_flags, linux_mode);
-
-  if (file_descriptor != -1)
-  {
-    result.handle = cast(void*)cast(ssize)file_descriptor;
-  }
-
-  return result;
-}
 
 OS_Handle os_file_open(const char* filepath, u32 flags)
 {

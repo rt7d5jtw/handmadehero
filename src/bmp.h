@@ -183,7 +183,8 @@ b32 write_bmp_file(
       .data = data_buffer
   };
 
-  OS_Handle bmp_file = os_file_create(filepath);
+  u8 flags           = OS_AccessFlags_Write | OS_AccessFlags_Write;
+  OS_Handle bmp_file = os_file_open(filepath, flags);
 
   if (bmp_file.handle == cast(void*)-1)
   {
@@ -211,7 +212,7 @@ b32 write_bmp_file(
 BitmapImage read_bmp_file(char* filepath)
 {
   BitmapImage bmp_image = {0};
-  OS_Handle file        = os_file_open(filepath);
+  OS_Handle file        = os_file_open(filepath, OS_AccessFlags_Read);
 
   if (file.handle != cast(void*) - 1)
   {

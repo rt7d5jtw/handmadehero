@@ -35,7 +35,6 @@ typedef enum OS_AccessFlags
 } OS_AccessFlags;
 
 OS_Handle os_file_open(const char* filepath, u32 flags);
-OS_Handle os_file_create(const char* filepath, u32 flags);
 b32 os_file_read(OS_Handle, void* buffer, u32 bytes_to_read);
 b32 os_file_write(OS_Handle file, const void* buffer, u32 bytes_to_write);
 void os_file_close(OS_Handle file);
