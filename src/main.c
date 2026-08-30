@@ -1019,6 +1019,71 @@ global enum GUI_MODE current_gui_mode = MODE_GRADIENT_ANIMATION;
 #  define WHITE      0xffffff
 #  define BLACK      0x000000
 
+b32 alsa_set_hardware_parameters(snd_pcm_t* pcm_handle, u32 audio_channels, u32 samples_per_second)
+{
+  snd_pcm_hw_params_t* pcm_hardware_configuration;
+  snd_pcm_hw_params_alloca(&pcm_hardware_configuration);
+
+  int init_hardware_params = snd_pcm_hw_params_any(pcm_handle, pcm_hardware_configuration);
+  if (init_hardware_params < 0) {
+    DEBUG_LOG("[ALSA] Unable to allocate hardware parameter structure (%s)", snd_strerror(init_hardware_params));
+    return 0;
+  }
+
+  int set_access = snd_pcm_hw_params_set_access(pcm_handle, pcm_hardware_configuration, SND_PCM_ACCESS_RW_INTERLEAVED);
+  if (set_access < 0) {
+    DEBUG_LOG("[ALSA] Unable set access type (%s)", snd_strerror(set_access));
+    return 0;
+  }
+
+  int set_format = snd_pcm_hw_params_set_format(pcm_handle, pcm_hardware_configuration, SND_PCM_FORMAT_S16_LE);
+  if (set_format < 0) {
+    DEBUG_LOG("[ALSA] Unable set format (%s)", snd_strerror(set_format));
+    return 0;
+  }
+
+  int set_channels = snd_pcm_hw_params_set_channels(pcm_handle, pcm_hardware_configuration, audio_channels);
+  if (set_channels < 0) {
+    DEBUG_LOG("[ALSA] Unable set channels count (%s)", snd_strerror(set_channels));
+    return 0;
+  }
+
+  int set_rate = snd_pcm_hw_params_set_rate(pcm_handle, pcm_hardware_configuration, samples_per_second, 0);
+  if (set_rate < 0) {
+    DEBUG_LOG("[ALSA] Unable set rate (%s)", snd_strerror(set_rate));
+    return 0;
+  }
+
+  int set_period = snd_pcm_hw_params_set_periods(pcm_handle, pcm_hardware_configuration, 10, 0);
+  if (set_period < 0) {
+    DEBUG_LOG("[ALSA] Unable set period (%s)", snd_strerror(set_period));
+    return 0;
+  }
+
+  int set_period_time = snd_pcm_hw_params_set_period_time(pcm_handle, pcm_hardware_configuration, 100000, 0);
+  if (set_period_time < 0) {
+    DEBUG_LOG("[ALSA] Unable set period time (%s)", snd_strerror(set_period_time));
+    return 0;
+  }
+
+  // install PCM hardware configuration
+  int alsa_hw_params = snd_pcm_hw_params(pcm_handle, pcm_hardware_configuration);
+  if (alsa_hw_params < 0)
+  {
+    DEBUG_LOG("[ALSA] Unable to set hardware parameters: %s", snd_strerror(alsa_hw_params));
+    snd_pcm_close(pcm_handle);
+    return 0;
+  }
+  else
+  {
+    // set alsa to non-blocking mode
+    // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga6bd90de1d1527b5804090dcce51079ad
+    snd_pcm_nonblock(pcm_handle, 1);
+  }
+
+  return 1;
+}
+
 void x11_clear_buffer(XImage* image, u64 color)
 {
   assert(
@@ -1330,30 +1395,9 @@ int main(void)
   else
   {
     // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga1ca0dc120a484965e26cabf966502330
-    snd_pcm_hw_params_t* pcm_hardware_configuration;
-    snd_pcm_hw_params_alloca(&pcm_hardware_configuration);
-    snd_pcm_hw_params_any(pcm_handle, pcm_hardware_configuration);
-    snd_pcm_hw_params_set_access(pcm_handle, pcm_hardware_configuration, SND_PCM_ACCESS_RW_INTERLEAVED);
-    snd_pcm_hw_params_set_format(pcm_handle, pcm_hardware_configuration, SND_PCM_FORMAT_S16_LE);
-
-    snd_pcm_hw_params_set_channels(pcm_handle, pcm_hardware_configuration, audio_channels);
-    snd_pcm_hw_params_set_rate(pcm_handle, pcm_hardware_configuration, sound_output.samples_per_second, 0);
-    snd_pcm_hw_params_set_periods(pcm_handle, pcm_hardware_configuration, 10, 0);
-    snd_pcm_hw_params_set_period_time(pcm_handle, pcm_hardware_configuration, 100000, 0);
-
-    // install PCM hardware configuration
-    int alsa_hw_params = snd_pcm_hw_params(pcm_handle, pcm_hardware_configuration);
-    if (alsa_hw_params < 0)
+    if (!alsa_set_hardware_parameters(pcm_handle, audio_channels, sound_output.samples_per_second))
     {
-      fprintf(stderr, "[ALSA] Unable to set hardware parameters: %s\n", snd_strerror(alsa_hw_params));
-      snd_pcm_close(pcm_handle);
       pcm_handle = NULL;
-    }
-    else
-    {
-      // set alsa to non-blocking mode
-      // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga6bd90de1d1527b5804090dcce51079ad
-      snd_pcm_nonblock(pcm_handle, 1);
     }
   }
 
