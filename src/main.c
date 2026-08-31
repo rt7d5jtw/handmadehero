@@ -8,6 +8,11 @@
 
 #include "base.h"
 
+/* Forward declaration */
+LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
+
+/* main loop */
+global b32 running = true;
 global u32 active_prng_seed = 123456789;
 
 // Xorshift RNGs
@@ -525,12 +530,6 @@ internal void win32_display_buffer_in_window(
 
 /// }}}
 
-/* main loop */
-b32 running = true;
-
-/* Forward declaration */
-LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
-
 /**
  * Entrypoint for Windows
  * https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-winmain
@@ -681,6 +680,7 @@ int WINAPI WinMain(
     sound_is_playing = 1;
   }
 
+  u64 last_cycle_count = __rdtsc();
   LARGE_INTEGER last_counter;
   QueryPerformanceCounter(&last_counter);
 
@@ -814,10 +814,22 @@ int WINAPI WinMain(
     LARGE_INTEGER end_counter;
     QueryPerformanceCounter(&end_counter);
 
+    u64 end_cycle_count = __rdtsc();
     s64 counter_elapsed = end_counter.QuadPart - last_counter.QuadPart;
+    s64 cycles_elapsed = end_cycle_count - last_cycle_count;
     s32 ms_per_frame = (s32)((1000*counter_elapsed) / perf_count_frequency);
-    DEBUG_LOG("ms/frame: %d ms", ms_per_frame);
+    s32 fps = (s32)(perf_count_frequency / counter_elapsed);
+    s32 megacycles_per_frame = cycles_elapsed / (1000 * 1000);
+
+    //f32 ms_per_frame = 1000.0f*(f32)counter_elapsed / (f32)perf_count_frequency;
+    //f32 fps = ((f32)perf_count_frequency / (f32)counter_elapsed)
+    //f32 megacycles_per_frame = (f32)cycles_elapsed / (1000.0f * 1000.0f)
+    //DEBUG_LOG("ms/frame: %.02f ms | fps: %.02f | Mc/frame %.02f", ms_per_frame, fps, megacycles_per_frame);
+
+    DEBUG_LOG("ms/frame: %d ms | fps: %d | Mc/frame %d", ms_per_frame, fps, megacycles_per_frame);
+
     last_counter = end_counter;
+    last_cycle_count = end_cycle_count;
   }
 
   return msg.wParam;
