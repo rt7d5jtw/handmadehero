@@ -13,7 +13,10 @@ OS_Handle os_file_open(const char* filepath, u32 flags)
 
   DWORD desired_access = 0;
   DWORD share_mode = 0;
+  LPSECURITY_ATTRIBUTES security_attributes = NULL;
   DWORD creation_disposition = OPEN_EXISTING;
+  DWORD flags_and_attributes = FILE_ATTRIBUTE_NORMAL;
+  HANDLE template_file = NULL;
 
   if (flags & OS_AccessFlags_Read)
   {
@@ -41,10 +44,10 @@ OS_Handle os_file_open(const char* filepath, u32 flags)
       filepath,
       desired_access,
       share_mode,
-      NULL,
+      security_attributes,
       creation_disposition,
-      FILE_ATTRIBUTE_NORMAL,
-      NULL
+      flags_and_attributes,
+      template_file
   );
 
   if (file_handle != INVALID_HANDLE_VALUE)
@@ -63,6 +66,7 @@ b32 os_file_read(OS_Handle file, void* buffer, u32 bytes_to_read)
   }
 
   DWORD bytes_read = 0;
+  LPOVERLAPPED overlapped = NULL;
 
   // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile
   BOOL success = ReadFile(
@@ -70,7 +74,7 @@ b32 os_file_read(OS_Handle file, void* buffer, u32 bytes_to_read)
     buffer,
     cast(DWORD)bytes_to_read,
     &bytes_read,
-    NULL
+    overlapped
   );
 
   if (!success || bytes_read != bytes_to_read)
@@ -102,7 +106,7 @@ b32 os_file_write(OS_Handle file, const void* buffer, u32 bytes_to_write)
       buffer,
       cast(DWORD)bytes_to_write,
       &bytes_written,
-      NULL
+      ptr_to_overlapped_struct_if_required
   );
 
   if (!success || bytes_written != bytes_to_write)

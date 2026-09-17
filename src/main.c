@@ -8,9 +8,6 @@
 
 #include "base.h"
 
-/* Forward declaration */
-LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
-
 /* main loop */
 global b32 running = true;
 global u32 active_prng_seed = 123456789;
@@ -31,6 +28,9 @@ u32 xorshift32(void)
 }
 
 #if defined(_WIN32) // Windows code {{{
+
+/* Forward declaration */
+LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
 
 #  define _CRT_SECURE_NO_WARNINGS
 #  define _CRT_SECURE_NO_DEPRECATE
@@ -826,7 +826,7 @@ int WINAPI WinMain(
     //f32 megacycles_per_frame = (f32)cycles_elapsed / (1000.0f * 1000.0f)
     //DEBUG_LOG("ms/frame: %.02f ms | fps: %.02f | Mc/frame %.02f", ms_per_frame, fps, megacycles_per_frame);
 
-    DEBUG_LOG("ms/frame: %d ms | fps: %d | Mc/frame %d", ms_per_frame, fps, megacycles_per_frame);
+    DEBUG_LOG("ms/frame: %d | fps: %d | Mc/frame %d", ms_per_frame, fps, megacycles_per_frame);
 
     last_counter = end_counter;
     last_cycle_count = end_cycle_count;
@@ -987,6 +987,8 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 #  include <sys/syscall.h>
 #  include <unistd.h>
 #  include <math.h>
+#  include <time.h>
+#  include <x86intrin.h>
 
 #  include <X11/Xlib.h>
 #  include <X11/Xutil.h>
@@ -994,7 +996,7 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
 
 #  include <alsa/asoundlib.h>
 
-#  include "bmp.h"
+//#  include "bmp.h"
 
 typedef struct LinuxSoundOutput LinuxSoundOutput;
 struct LinuxSoundOutput {
@@ -1009,7 +1011,6 @@ struct LinuxSoundOutput {
 
 b32 keyboard[256]                = {0};
 global usize current_buffer_size = 0;
-global b32 running               = true;
 
 /* GUI MODE:
  * 0 -> "draw gradient mode"
@@ -1379,6 +1380,11 @@ int main(void)
   // image->data = malloc(image->bytes_per_line * image->height);
   x11_clear_buffer(image, BLACK);
 
+  // Linux QPC / QPF
+  u64 last_cycle_count = __rdtsc();
+  struct timespec last_counter;
+  clock_gettime(CLOCK_MONOTONIC, &last_counter);
+
   XEvent generalEvent;
   u64 x_offset = 0;
   u64 y_offset = 0;
@@ -1696,7 +1702,35 @@ int main(void)
       draw_snow(image);
       x11_render_buffer(mainDisplay, mainWindow, gc, image);
     }
-  }
+
+    // Get ending time
+    struct timespec end_counter;
+    clock_gettime(CLOCK_MONOTONIC, &end_counter);
+
+    u64 end_cycle_count = __rdtsc();
+    s64 cycles_elapsed = end_cycle_count - last_cycle_count;
+    s32 megacycles_per_frame = cycles_elapsed / (1000 * 1000);
+
+#define MILLISECONDS_PER_SECOND 1000
+#define NANOSECONDS_PER_SECOND 1000000000ULL
+#define NANOSECONDS_PER_MILLISECOND 1000000ULL
+
+    // Calculate the time difference in nanoseconds
+    u64 elapsed_nanoseconds =
+      ((u64)end_counter.tv_sec * NANOSECONDS_PER_SECOND + (u64)end_counter.tv_nsec) -
+      ((u64)last_counter.tv_sec * NANOSECONDS_PER_SECOND + (u64)last_counter.tv_nsec);
+
+    //u64 elapsed_nanoseconds = ((u64) end_counter.tv_sec)
+    s32 ms_per_frame = (s32)(elapsed_nanoseconds / NANOSECONDS_PER_MILLISECOND);
+    s32 fps = (s32)(NANOSECONDS_PER_SECOND / elapsed_nanoseconds);
+
+    DEBUG_LOG("ms/frame: %d | fps: %d | Mc/frame %d", ms_per_frame, fps, megacycles_per_frame);
+
+    // Reset counters for the next frame
+    last_cycle_count = end_cycle_count;
+    last_counter = end_counter;
+
+  } // End of while(running)
 
   // Wait for the X Server to process all buffered requests and clear the queue
   // before cleanup
