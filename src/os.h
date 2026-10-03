@@ -8,8 +8,12 @@
 #if defined(_WIN32)
 #  include <windows.h>
 #elif defined(__linux__)
+#  include <sys/stat.h>
+#  include <sys/mman.h>
 #  include <fcntl.h>
 #  include <unistd.h>
+#  include <time.h>
+#  define BILLION 1000000000ULL
 #endif
 
 /* We use a generic OS_Handle for files,
@@ -39,10 +43,16 @@ b32 os_file_read(OS_Handle, void* buffer, u32 bytes_to_read);
 b32 os_file_write(OS_Handle file, const void* buffer, u32 bytes_to_write);
 void os_file_close(OS_Handle file);
 void os_file_seek(OS_Handle file, u32 offset);
+b32 os_file_size(char * filepath, u64* filesize);
 
-/*
-void* os_memory_reserve(usize allocation_size);
-b32 os_memory_commit(void* memory_ptr,  usize allocation_size);
-b32 os_memory_commit(void* memory_ptr,  usize allocation_size);
-b32 os_memory_release(void* memory_ptr, usize allocation_size);
-*/
+/* returns 0 on failure, otherwise returns base address of the allocated region of pages */
+internal void* os_memory_reserve(usize allocation_size);
+/* returns true if memory was commited, returns false on failure */
+internal b32   os_memory_commit(void* memory_ptr, usize allocation_size);
+/* returns true if memory was decommitted, returns false on failure */
+internal b32   os_memory_decommit(void* memory_ptr, usize allocation_size);
+/* returns true if memory was released, returns false on failure */
+internal b32   os_memory_release(void* memory_ptr, usize allocation_size);
+
+u64 os_get_time(void);
+f32 os_get_time_elapsed_in_microseconds(u64 start_time, u64 end_time);

@@ -7,6 +7,14 @@
 #include <math.h>
 
 #include "base.h"
+#include "os.h"
+#include "arena.h"
+#include "wav.h"
+
+// Unity build includes
+#include "os.c"
+#include "arena.c"
+#include "wav.c"
 
 /* main loop */
 global b32 running = true;
@@ -1038,49 +1046,56 @@ b32 alsa_set_hardware_parameters(snd_pcm_t* pcm_handle, u32 audio_channels, u32 
   snd_pcm_hw_params_alloca(&pcm_hardware_configuration);
 
   int init_hardware_params = snd_pcm_hw_params_any(pcm_handle, pcm_hardware_configuration);
-  if (init_hardware_params < 0) {
+  if (init_hardware_params < 0)
+  {
     DEBUG_LOG("[ALSA] Unable to allocate hardware parameter structure (%s)", snd_strerror(init_hardware_params));
     return 0;
   }
 
   // https://www.alsa-project.org/alsa-doc/alsa-lib/pcm_2pcm_8c.html#a875bd8c29ac0febc6f9c42dbb0f750e3
   int set_access = snd_pcm_hw_params_set_access(pcm_handle, pcm_hardware_configuration, SND_PCM_ACCESS_RW_INTERLEAVED);
-  if (set_access < 0) {
+  if (set_access < 0)
+  {
     DEBUG_LOG("[ALSA] Unable set access type (%s)", snd_strerror(set_access));
     return 0;
   }
 
   // https://www.alsa-project.org/alsa-doc/alsa-lib/pcm_2pcm_8c.html#a6cf998c0383baba561edb8921c0f672e
   int set_format = snd_pcm_hw_params_set_format(pcm_handle, pcm_hardware_configuration, SND_PCM_FORMAT_S16_LE);
-  if (set_format < 0) {
+  if (set_format < 0)
+  {
     DEBUG_LOG("[ALSA] Unable set sample format (%s)", snd_strerror(set_format));
     return 0;
   }
 
   // https://www.alsa-project.org/alsa-doc/alsa-lib/pcm_2pcm_8c.html#a3a5b2a05c5d9869cc743dac71c0d270a
   int set_channels = snd_pcm_hw_params_set_channels(pcm_handle, pcm_hardware_configuration, audio_channels);
-  if (set_channels < 0) {
+  if (set_channels < 0)
+  {
     DEBUG_LOG("[ALSA] Unable set channels count (%u), (%s)", audio_channels, snd_strerror(set_channels));
     return 0;
   }
 
   // https://www.alsa-project.org/alsa-doc/alsa-lib/pcm_2pcm_8c.html#a29cd2571738847813af1489043d1af5a
   int set_rate = snd_pcm_hw_params_set_rate(pcm_handle, pcm_hardware_configuration, samples_per_second, 0);
-  if (set_rate < 0) {
+  if (set_rate < 0)
+  {
     DEBUG_LOG("[ALSA] Unable set rate %uHz, (%s)", samples_per_second, snd_strerror(set_rate));
     return 0;
   }
 
   // https://www.alsa-project.org/alsa-doc/alsa-lib/pcm_2pcm_8c.html#a472aa3f2d8ce4040caa874fe60aba961
   int set_period = snd_pcm_hw_params_set_periods(pcm_handle, pcm_hardware_configuration, 10, 0);
-  if (set_period < 0) {
+  if (set_period < 0)
+  {
     DEBUG_LOG("[ALSA] Unable set period (%s)", snd_strerror(set_period));
     return 0;
   }
 
   // https://www.alsa-project.org/alsa-doc/alsa-lib/pcm_2pcm_8c.html#aa2bc2a32d3971521064741a30e10c92f
   int set_period_time = snd_pcm_hw_params_set_period_time(pcm_handle, pcm_hardware_configuration, 100000, 0);
-  if (set_period_time < 0) {
+  if (set_period_time < 0)
+  {
     DEBUG_LOG("[ALSA] Unable set period time (%s)", snd_strerror(set_period_time));
     return 0;
   }
@@ -1256,13 +1271,88 @@ GC create_x11_graphics_context(
   return gc;
 }
 
+void create_wav_sine_file(void)
+{
+  Arena* wave_arena = arena_alloc();
+  OS_Handle file = os_file_open("test.wav", OS_AccessFlags_Create | OS_AccessFlags_Write);
+  if (file.handle != (void*)-1)
+  {
+    // We are just using this for generating a sine wave and storing it's state
+    u32 SAMPLE_RATE = 48000;
+    u16 BIT_DEPTH = 16;
+    u16 NUM_CHANNELS = 2;
+    f32 frequency = 440.0f;
+    s32 duration = 6;
+    u32 max_amplitude = (1 << (BIT_DEPTH - 1)) - 1;
+
+    u32 total_samples = SAMPLE_RATE * duration * NUM_CHANNELS;
+    u32 datasize = total_samples * (BIT_DEPTH / 8);
+    u32 total_filesize = sizeof(RIFFHeader) + sizeof(RIFFChunk) + sizeof(WAVEChunk) + sizeof(RIFFChunk) + datasize;
+
+    u8* buffer = push_array(wave_arena, u8, total_filesize);
+    u8* cursor = buffer;
+
+    // Write the RIFF header
+    RIFFHeader* riff_header = (RIFFHeader*)cursor;
+    riff_header->riff_id = AsciiID4('R', 'I', 'F', 'F');
+    riff_header->filesize = total_filesize - 8;
+    riff_header->wave_id  = AsciiID4('W', 'A', 'V', 'E');
+    cursor += sizeof(RIFFHeader);
+
+    // Write the "fmt " chunk header
+    RIFFChunk* fmt_header = (RIFFChunk*)cursor;
+    fmt_header->id = AsciiID4('f', 'm', 't', ' ');
+    fmt_header->size = sizeof(WAVEChunk);
+    cursor += sizeof(RIFFChunk);
+
+    // Write "fmt " payload
+    WAVEChunk* fmt = (WAVEChunk*)cursor;
+    fmt->audio_format = 1;
+    fmt->num_channels = NUM_CHANNELS;
+    fmt->sample_rate = SAMPLE_RATE;
+    fmt->block_align = NUM_CHANNELS * (BIT_DEPTH / 8);
+    fmt->byte_rate = SAMPLE_RATE * fmt->block_align;
+    fmt->bits_per_sample = BIT_DEPTH;
+    cursor += sizeof(WAVEChunk);
+
+    // Write "data" chunk header
+    RIFFChunk* data_header = (RIFFChunk*)cursor;
+    data_header->id = AsciiID4('d', 'a', 't', 'a');
+    data_header->size = datasize;
+    cursor += sizeof(RIFFChunk);
+
+    ToneGenerator tone_generator = {
+      .frequency = frequency,
+      .amplitude = 0.5f,
+      .angle = 0.0f,
+      .phase_increment = 2.0 * PI_F64 * frequency / SAMPLE_RATE
+    };
+
+    s16* audio_samples = (s16*)cursor;
+    for (u32 idx = 0; idx < (SAMPLE_RATE * duration); idx += 1)
+    {
+      f32 sample = generate_sine_sample(&tone_generator);
+      s16 pcm_sample = (s16)(sample * max_amplitude);
+
+      // Duplicate for left and right channels
+      *audio_samples++ = pcm_sample; // Channel 1 left
+      *audio_samples++ = pcm_sample; // Channel 2 right
+    }
+
+    if (os_file_write(file, buffer, total_filesize))
+    {
+      DEBUG_LOG("Successfully generated and wrote %u bytes to test.wav!", total_filesize);
+    }
+  }
+  os_file_close(file);
+}
+
 int main(void)
 {
-  // syscall(SYS_write, 1, "I like pancakes\n", 17);
 
-  // BitmapImage bmp_image = read_bmp_file("blue_pixel_24.bmp");
-  //(void)bmp_image;
-  //  printf("bmp_image -> %d", (int*)bmp_image);
+  // BEGIN WAVE TEST
+  create_wav_sine_file();
+  // END WAVE TEST
 
   u32 x                = 0;
   u32 y                = 0;
@@ -1380,10 +1470,9 @@ int main(void)
   // image->data = malloc(image->bytes_per_line * image->height);
   x11_clear_buffer(image, BLACK);
 
-  // Linux QPC / QPF
   u64 last_cycle_count = __rdtsc();
-  struct timespec last_counter;
-  clock_gettime(CLOCK_MONOTONIC, &last_counter);
+  // Linux QPC / QPF
+  u64 start_time       = os_get_time();
 
   XEvent generalEvent;
   u64 x_offset = 0;
@@ -1704,31 +1793,19 @@ int main(void)
     }
 
     // Get ending time
-    struct timespec end_counter;
-    clock_gettime(CLOCK_MONOTONIC, &end_counter);
+    u64 end_time = os_get_time();
+    f32 elapsed_microseconds = os_get_time_elapsed_in_microseconds(start_time, end_time);
+    f32 fps = elapsed_microseconds ? (f32)(1000000.0f / elapsed_microseconds) : 0.0f;
 
     u64 end_cycle_count = __rdtsc();
     s64 cycles_elapsed = end_cycle_count - last_cycle_count;
     s32 megacycles_per_frame = cycles_elapsed / (1000 * 1000);
 
-#define MILLISECONDS_PER_SECOND 1000
-#define NANOSECONDS_PER_SECOND 1000000000ULL
-#define NANOSECONDS_PER_MILLISECOND 1000000ULL
-
-    // Calculate the time difference in nanoseconds
-    u64 elapsed_nanoseconds =
-      ((u64)end_counter.tv_sec * NANOSECONDS_PER_SECOND + (u64)end_counter.tv_nsec) -
-      ((u64)last_counter.tv_sec * NANOSECONDS_PER_SECOND + (u64)last_counter.tv_nsec);
-
-    //u64 elapsed_nanoseconds = ((u64) end_counter.tv_sec)
-    s32 ms_per_frame = (s32)(elapsed_nanoseconds / NANOSECONDS_PER_MILLISECOND);
-    s32 fps = (s32)(NANOSECONDS_PER_SECOND / elapsed_nanoseconds);
-
-    DEBUG_LOG("ms/frame: %d | fps: %d | Mc/frame %d", ms_per_frame, fps, megacycles_per_frame);
+    //DEBUG_LOG("µs/frame: %.2f | fps: %.2f | Mc/frame %d", elapsed_microseconds, fps, megacycles_per_frame);
 
     // Reset counters for the next frame
     last_cycle_count = end_cycle_count;
-    last_counter = end_counter;
+    start_time = end_time;
 
   } // End of while(running)
 

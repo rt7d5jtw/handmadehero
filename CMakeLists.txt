@@ -36,9 +36,6 @@ endif()
 message("Project source dir is ${PROJECT_SOURCE_DIR}")
 message("CMAKE_SYSTEM_NAME is ${CMAKE_SYSTEM_NAME}")
 
-file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.c)
-target_sources(${PROJECT_NAME} PRIVATE ${sources})
-
 target_include_directories("${PROJECT_NAME}"
   PUBLIC
   "${PROJECT_SOURCE_DIR}/src"
