@@ -5,25 +5,26 @@
             "name": "(Windows) Launch",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/Debug/handmadehero.exe",
+            "program": "${workspaceFolder}/build/handmadehero.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
-            "console": "externalTerminal"
+            "console": "externalTerminal",
+            "preLaunchTask": "Build Project"
         },
         {
-            "name": "(gdb) Launch",
+            "name": "(Linux gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/Debug/handmadehero.exe",
+            "program": "${workspaceFolder}/build/handmadehero",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
-            "miDebuggerPath": "/path/to/gdb",
+            "preLaunchTask": "Build Project",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
