@@ -1414,17 +1414,14 @@ int main(void)
   // XSetForeground(mainDisplay, gc, BlackPixel(mainDisplay, screen));
   int screen = DefaultScreen(mainDisplay);
 
-  usize buffer_size    = (usize)WINDOW_WIDTH * WINDOW_HEIGHT * BYTES_PER_PIXEL;
-  char* x11_backbuffer = mmap(
-      NULL,
-      buffer_size,
-      PROT_READ | PROT_WRITE,
-      MAP_PRIVATE | MAP_ANONYMOUS,
-      -1,
-      0
-  );
+  // 3840 * 2160 * 4 bytes = ~33 MB
+  u32 MAX_WIDTH = 3840;
+  u32 MAX_HEIGHT = 2160;
+  usize max_buffer_size = cast(usize)MAX_WIDTH * MAX_HEIGHT * BYTES_PER_PIXEL;
+  Arena* arena = arena_alloc();
+  char* x11_backbuffer = push_array(arena, char, max_buffer_size);
 
-  if (x11_backbuffer == MAP_FAILED)
+  if (x11_backbuffer == 0)
   {
     fprintf(
         stderr, "Fatal Error: Failed to allocate initial backbuffer for X11.\n"
@@ -1435,7 +1432,7 @@ int main(void)
     return 1;
   }
 
-  current_buffer_size = buffer_size;
+  current_buffer_size = max_buffer_size;
 
   XImage* image = XCreateImage(
       mainDisplay,
@@ -1539,19 +1536,15 @@ int main(void)
 
           if (new_width != image->width || new_height != image->height)
           {
-            printf("[DEBUG] Resizing buffer to %dx%d\n", new_width, new_height);
+            DEBUG_LOG("[DEBUG] Resizing buffer to %dx%d\n", new_width, new_height);
 
-            char* old_data = image->data;
-            usize old_size = current_buffer_size;
+            // clamp to max suported resolution
+            new_width  = ClampTop(new_width, MAX_WIDTH);
+            new_height = ClampTop(new_height, MAX_HEIGHT);
 
             // Prevents XDestroyImage from deallocating the backbuffer
             image->data = NULL;
             XDestroyImage(image);
-
-            if (munmap(old_data, old_size) == -1)
-            {
-              perror("[ERROR] munmap for resizing backbuffer failed");
-            }
 
             image = XCreateImage(
                 mainDisplay,
@@ -1559,33 +1552,12 @@ int main(void)
                 DefaultDepth(mainDisplay, screen),
                 ZPixmap,
                 0,
-                NULL, // data pointer is null initially
+                (char*)x11_backbuffer, // data pointer is null initially
                 new_width,
                 new_height,
                 32,
                 0
             );
-
-            // reallocate for the new size
-            usize new_buffer_size = image->bytes_per_line * image->height;
-            current_buffer_size   = new_buffer_size;
-            image->data           = mmap(
-                NULL,
-                new_buffer_size,
-                PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANONYMOUS,
-                -1,
-                0
-            );
-
-            if (image->data == MAP_FAILED)
-            {
-              fprintf(
-                  stderr,
-                  "ERROR: Failed to reallocate image data during resize.\n"
-              );
-              running = false;
-            }
 
             if (current_gui_mode == MODE_DRAWING)
             {
@@ -1818,11 +1790,6 @@ int main(void)
     // Prevent XDestroyImage from deallocating the backbuffer
     char* imgdata = image->data;
     image->data   = NULL;
-
-    if (munmap(imgdata, current_buffer_size) == -1)
-    {
-      perror("[ERROR] munmap for final cleanup backbuffer failed");
-    }
   }
 
   // Cleanup
