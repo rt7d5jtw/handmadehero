@@ -2,10 +2,31 @@
 setlocal
 
 :: -----------------------------------------------------------------------------
-:: Compiler and environment paths
+:: Locate Visual Studio via vswhere.exe and initialize environment
 :: -----------------------------------------------------------------------------
-set MSVC_DIR="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build"
+if defined DevEnvDir goto :EnvironmentReady
+
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if not exist "%VSWHERE%" set "VSWHERE=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe"
+
+if not exist "%VSWHERE%" (
+    echo Error: vswhere.exe was not found. Please ensure Visual Studio is installed. >&2
+    exit /b 1
+)
+
+for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+    set "VS_INSTALL_DIR=%%i"
+)
+
+if not defined VS_INSTALL_DIR (
+    echo Error: Could not locate a Visual Studio installation with the VC++ toolchain. >&2
+    exit /b 1
+)
+
 set VSCMD_DEBUG=3
+call "%VS_INSTALL_DIR%\VC\Auxiliary\Build\vcvars64.bat" > msvc_debug_log.txt
+
+:EnvironmentReady
 
 :: -----------------------------------------------------------------------------
 :: Default build configuration
@@ -31,9 +52,6 @@ set WARNING_FLAGS=-W4 -wd4201 -wd4100 -wd4189 -wd4505
 :: set EXTERNAL_FLAGS=-external:anglebrackets -external:W0
 set COMPILER_FLAGS=%DEBUG_FLAGS% %WARNING_FLAGS%
 set LIBS=user32.lib gdi32.lib
-
-:: Load MSVC environment if not already loaded
-if not defined DevEnvDir call %MSVC_DIR%\vcvars64.bat > msvc_debug_log.txt
 
 if not exist build mkdir build
 pushd build
