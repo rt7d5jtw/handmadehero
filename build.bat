@@ -1,25 +1,57 @@
-:: cl compiler flags and options
-:: https://learn.microsoft.com/en-us/cpp/build/reference/compiler-options-listed-alphabetically?view=msvc-170
-:: https://learn.microsoft.com/en-us/cpp/build/reference/compiler-options?view=msvc-170
+@echo off
+setlocal
 
-:: user32.lib https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-creation
-:: gdi32.lib https://learn.microsoft.com/en-us/windows/win32/gdi/windows-gdi
-
-set msvcdir="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build"
-
-:: default build configuration
-set CONFIG=Debug
-set EXENAME=handmadehero.exe
-
+:: -----------------------------------------------------------------------------
+:: Compiler and environment paths
+:: -----------------------------------------------------------------------------
+set MSVC_DIR="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build"
 set VSCMD_DEBUG=3
 
-call %msvcdir%\vcvars64.bat > msvc_debug_log.txt
+:: -----------------------------------------------------------------------------
+:: Default build configuration
+:: -----------------------------------------------------------------------------
+set EXECUTABLE=handmadehero.exe
 
-REM if not defined DevEnvDir call %msvcdir%vcvars64.bat >nul
+:: -----------------------------------------------------------------------------
+:: Compiler Flags
+:: -----------------------------------------------------------------------------
+:: -Zi: Generate complete debug information
+:: -FC: Full paths in error diagnostics
+set DEBUG_FLAGS=-Zi -FC
 
-echo "Current directory %cd%"
+:: -W4: High warning level
+:: -wd4201: Nameless struct/union (used constantly in Windows SDK headers like windows.h)
+:: -wd4100: Unreferenced formal parameter (common in Win32 callbacks like WindowProc)
+:: -wd4189: Local variable is initialized but not referenced
+:: -wd4505: Unreferenced local function has been removed
+set WARNING_FLAGS=-W4 -wd4201 -wd4100 -wd4189 -wd4505
 
-if not exist build\%CONFIG% mkdir build\%CONFIG%
-pushd build\%CONFIG%
-cl -FC -Zi -Fe:%EXENAME% ..\..\src\main.c user32.lib gdi32.lib
+:: Optional modern alternative for external headers (MSVC 2019 16.10+):
+:: Treats #include <...> as external and silences warnings originating inside them:
+:: set EXTERNAL_FLAGS=-external:anglebrackets -external:W0
+set COMPILER_FLAGS=%DEBUG_FLAGS% %WARNING_FLAGS%
+set LIBS=user32.lib gdi32.lib
+
+:: Load MSVC environment if not already loaded
+if not defined DevEnvDir call %MSVC_DIR%\vcvars64.bat > msvc_debug_log.txt
+
+if not exist build mkdir build
+pushd build
+
+:: -----------------------------------------------------------------------------
+:: Build Execution
+:: -----------------------------------------------------------------------------
+echo Compiling %EXECUTABLE%...
+cl %COMPILER_FLAGS% -Fe:%EXECUTABLE% ..\src\main.c %LIBS%
+set BUILD_STATUS=%ERRORLEVEL%
+
+echo --------------------------------------------------
+if %BUILD_STATUS% EQU 0 (
+    echo Build DONE
+) else (
+    echo Build FAILED with error code %BUILD_STATUS%
+)
+echo --------------------------------------------------
+
 popd
+exit /b %BUILD_STATUS%
