@@ -22,6 +22,8 @@ global u32 active_prng_seed = 123456789;
 // max resolution: 3840 * 2160 * 4 bytes = ~33 MB
 global read_only u32 MAX_WIDTH = 3840;
 global read_only u32 MAX_HEIGHT = 2160;
+// 4 bytes for 32-bit color depth (e.g. BGRA)
+global read_only u32 BYTES_PER_PIXEL = 4;
 
 // Xorshift RNGs
 // https://excamera.com/sphinx/article-xorshift.html
@@ -402,7 +404,7 @@ internal void win32_resize_dib_section(
 
   offscreen_buffer->width           = width;
   offscreen_buffer->height          = height;
-  offscreen_buffer->bytes_per_pixel = 4;
+  offscreen_buffer->bytes_per_pixel = BYTES_PER_PIXEL;
 
   offscreen_buffer->info.bmiHeader.biSize        = sizeof(offscreen_buffer->info.bmiHeader);
   offscreen_buffer->info.bmiHeader.biWidth       = offscreen_buffer->width;
@@ -484,7 +486,6 @@ int WINAPI WinMain(
   HWND window_handle = NULL;
   static MSG msg     = {0};
 
-  u32 BYTES_PER_PIXEL = 4;
   usize max_buffer_size = cast(usize)MAX_WIDTH * MAX_HEIGHT * BYTES_PER_PIXEL;
   Arena* arena = arena_alloc();
   win32_offscreen_buffer.pixels = push_array(arena, u8, max_buffer_size);
@@ -944,7 +945,6 @@ global enum GUI_MODE current_gui_mode = MODE_GRADIENT_ANIMATION;
 
 #  define WINDOW_WIDTH    1480
 #  define WINDOW_HEIGHT   860
-#  define BYTES_PER_PIXEL 4 // 4 bytes for 32-bit color depth (e.g. BGRA)
 
 #  define DARK_GREEN 0x8aa37f
 #  define BLUE       0x0000ff
