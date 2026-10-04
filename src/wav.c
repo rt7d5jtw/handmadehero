@@ -3,7 +3,7 @@
 
 f32 generate_sine_sample(ToneGenerator *tone_generator)
 {
-  f32 sample = tone_generator->amplitude * sin(tone_generator->angle);
+  f32 sample = tone_generator->amplitude * sinf(tone_generator->angle);
   tone_generator->angle += tone_generator->phase_increment;
   return sample;
 }

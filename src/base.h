@@ -365,22 +365,22 @@ typedef uint16_t c16;
 
 ///////////////////////// Basic Constants {{{
 
-global const s8  MIN_S8  = (s8) 0x80;
-global const s16 MIN_S16 = (s16) 0x8000;
-global const s32 MIN_S32 = (s32) 0x80000000;
-global const s64 MIN_S64 = (s64) 0x8000000000000000llu;
+global const s8  MIN_S8  = (s8) -128;
+global const s16 MIN_S16 = (s16) -32768;
+global const s32 MIN_S32 = (s32) -2147483647 - 1;
+global const s64 MIN_S64 = -9223372036854775807LL - 1;
 
 global const s8  MAX_S8  = (s8) 0x7f;
 global const s16 MAX_S16 = (s16) 0x7fff;
 global const s32 MAX_S32 = (s32) 0x7fffffff;
-global const s64 MAX_S64 = (s64) 0x7fffffffffffffffllu;
+global const s64 MAX_S64 = 0x7fffffffffffffffLL;
 
 global const u8  MAX_U8  = (u8) 0xff;
 global const u16 MAX_U16 = (u16) 0xffff;
 global const u32 MAX_U32 = (u32) 0xffffffff;
-global const u64 MAX_U64 = (u64) 0xffffffffffffffffllu;
+global const u64 MAX_U64 = 0xffffffffffffffffULL;
 
-global const f32 MACHINE_EPSILON_F32    = 1.1920929e-7;
+global const f32 MACHINE_EPSILON_F32    = 1.1920929e-7f;
 global const f32 PI_F32                 = 3.14159265359f;
 global const f32 TAU_F32                = 6.28318530718f;
 global const f32 E_F32                  = 2.71828182846f;

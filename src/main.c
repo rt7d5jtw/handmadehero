@@ -75,7 +75,7 @@ u32 xorshift32(void)
 #if defined(_WIN32) // Windows code {{{
 
 /* Forward declaration */
-LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
+internal LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
 
 #  define _CRT_SECURE_NO_WARNINGS
 #  define _CRT_SECURE_NO_DEPRECATE
@@ -148,7 +148,7 @@ global x_input_get_state* XInputGetState_ = XInputGetStateStub;
 #  define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
 typedef X_INPUT_SET_STATE(x_input_set_state);
 X_INPUT_SET_STATE(XInputSetStateStub) { return ERROR_DEVICE_NOT_CONNECTED; }
-global x_input_get_state* XInputSetState_ = XInputSetStateStub;
+global x_input_set_state* XInputSetState_ = XInputSetStateStub;
 #  define XInputSetState XInputSetState_
 // clang-format on
 
@@ -510,10 +510,10 @@ int WINAPI WinMain(
   // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexa
 
   // Contains window class information
-  WNDCLASSEX windowClass = {0};
+  WNDCLASSEXW windowClass = {0};
 
   // https://learn.microsoft.com/en-us/windows/win32/learnwin32/creating-a-window
-  wchar_t const window_class_name[] = L"Sample Window Class";
+  LPCWSTR window_class_name = L"Sample Window Class";
 
   HWND window_handle = NULL;
   static MSG msg     = {0};
@@ -524,7 +524,7 @@ int WINAPI WinMain(
 
   win32_resize_dib_section(&win32_offscreen_buffer, 1280, 720);
 
-  windowClass.cbSize        = sizeof(WNDCLASSEX);
+  windowClass.cbSize        = sizeof(WNDCLASSEXW);
   windowClass.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
   windowClass.lpszClassName = window_class_name;
   windowClass.lpfnWndProc   = win32WndProc; // Long Pointer to the Windows Procedure function
@@ -537,10 +537,10 @@ int WINAPI WinMain(
   windowClass.lpszMenuName  = NULL;
   windowClass.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
 
-  if (!RegisterClassEx(&windowClass))
+  if (!RegisterClassExW(&windowClass))
   {
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebox
-    MessageBox(
+    MessageBoxW(
         window_handle,
         L"Window Registration Failed!",
         L"Error!",
@@ -578,7 +578,7 @@ int WINAPI WinMain(
   LPVOID lp_param             = NULL;
 
   // Window handle for
-  window_handle = CreateWindowEx(
+  window_handle = CreateWindowExW(
       extended_window_style,
       window_class_name,
       window_name,
@@ -595,7 +595,7 @@ int WINAPI WinMain(
 
   if (window_handle == NULL)
   {
-    MessageBox(
+    MessageBoxW(
         window_handle,
         L"Window Creation Failed!",
         L"Error!",
@@ -775,7 +775,7 @@ int WINAPI WinMain(
     s64 cycles_elapsed = end_cycle_count - last_cycle_count;
     s32 ms_per_frame = (s32)((1000*counter_elapsed) / perf_count_frequency);
     s32 fps = (s32)(perf_count_frequency / counter_elapsed);
-    s32 megacycles_per_frame = cycles_elapsed / (1000 * 1000);
+    s32 megacycles_per_frame = cast(s32)(cycles_elapsed / (1000 * 1000));
 
     //f32 ms_per_frame = 1000.0f*(f32)counter_elapsed / (f32)perf_count_frequency;
     //f32 fps = ((f32)perf_count_frequency / (f32)counter_elapsed)
@@ -788,7 +788,7 @@ int WINAPI WinMain(
     last_cycle_count = end_cycle_count;
   }
 
-  return msg.wParam;
+  return cast(int)msg.wParam;
 }
 
 /**
@@ -820,7 +820,7 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_KEYDOWN:
     case WM_KEYUP: {
       // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
-      u32 vkCode  = wParam;
+      u32 vkCode  = cast(u32)wParam;
       b32 wasDown = ((lParam & (1 << 30)) != 0);
       b32 isDown  = ((lParam & (1 << 31)) == 0);
 
@@ -923,7 +923,7 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
     //} break;
     /// }}}
     default: {
-      result = DefWindowProc(window_handle, msg, wParam, lParam);
+      result = DefWindowProcW(window_handle, msg, wParam, lParam);
     }
   }
   return result;

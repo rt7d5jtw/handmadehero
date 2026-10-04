@@ -119,7 +119,7 @@ internal Arena* arena_alloc_(u64 reserve_size, b32 growing)
       arena->current          = arena;
       arena->prev             = 0;
       arena->alignment        = sizeof(void*);
-      arena->growing          = growing;
+      arena->growing          = cast(b8)growing;
       arena->base_pos         = 0;
       arena->chunk_cap        = reserve_size;
       arena->chunk_pos        = MEM_INTERNAL_MIN_SIZE;
