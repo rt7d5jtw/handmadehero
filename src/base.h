@@ -51,6 +51,7 @@
 #define internal static
 #define local    static
 #define global   static
+#define read_only const
 
 typedef uint8_t u8;
 typedef uint16_t u16;

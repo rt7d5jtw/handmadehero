@@ -19,6 +19,9 @@
 /* main loop */
 global b32 running = true;
 global u32 active_prng_seed = 123456789;
+// max resolution: 3840 * 2160 * 4 bytes = ~33 MB
+global read_only u32 MAX_WIDTH = 3840;
+global read_only u32 MAX_HEIGHT = 2160;
 
 // Xorshift RNGs
 // https://excamera.com/sphinx/article-xorshift.html
@@ -394,10 +397,8 @@ internal void win32_resize_dib_section(
     int height
 )
 {
-  if (offscreen_buffer->pixels)
-  {
-    VirtualFree(offscreen_buffer->pixels, 0, MEM_RELEASE);
-  }
+  width = ClampTop(width, MAX_WIDTH);
+  height = ClampTop(height, MAX_HEIGHT);
 
   offscreen_buffer->width           = width;
   offscreen_buffer->height          = height;
@@ -405,101 +406,10 @@ internal void win32_resize_dib_section(
 
   offscreen_buffer->info.bmiHeader.biSize        = sizeof(offscreen_buffer->info.bmiHeader);
   offscreen_buffer->info.bmiHeader.biWidth       = offscreen_buffer->width;
-  offscreen_buffer->info.bmiHeader.biHeight      = (s32)(offscreen_buffer->height);
+  offscreen_buffer->info.bmiHeader.biHeight      = -(s32)(offscreen_buffer->height);
   offscreen_buffer->info.bmiHeader.biPlanes      = 1;
   offscreen_buffer->info.bmiHeader.biBitCount    = 32;
   offscreen_buffer->info.bmiHeader.biCompression = BI_RGB;
-
-  int bitmap_memory_size = offscreen_buffer->bytes_per_pixel *
-                           (offscreen_buffer->width * offscreen_buffer->height);
-
-  offscreen_buffer->pixels = VirtualAlloc(0, bitmap_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-}
-
-internal void
-win32_resize_bitmap(Win32OffscreenBuffer* offscreen_buffer, LPARAM lParam)
-{
-  offscreen_buffer->info.bmiHeader.biWidth  = LOWORD(lParam);
-  offscreen_buffer->info.bmiHeader.biHeight = -HIWORD(
-      lParam
-  );
-  // DIBs are based in a coordinate system that is upside down relative to Windows, source:
-  // https://learn.microsoft.com/en-us/previous-versions/ms969901(v=msdn.10)?redirectedfrom=MSDN
-
-  // Delete already existing bitmap
-  if (offscreen_buffer->bitmap_handle)
-  {
-    DeleteObject(offscreen_buffer->bitmap_handle);
-  }
-
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdibsection
-  // Create a bitmap
-
-  // hdc      - Handle to a device context.
-  // pbmi     - Pointer to bitmap info.
-  // usage    - type of data contained in the bmiColors array member of the BITMAPINFO structure pointed to by pbmi.
-  // ppvBits  - a pointer to a variable that receives a pointer ot the location of the DIB bit values.
-  // hSection - a handle to a file-mapping object that hte function will use to create the DIB.
-  // offset   - the offset form the beginning of the file-mapping object referenced by hSection where storage for the bitmap bit values is to begin.
-
-  offscreen_buffer->bitmap_handle = CreateDIBSection(
-      NULL,
-      &offscreen_buffer->info,
-      DIB_RGB_COLORS,
-      (void**)&offscreen_buffer->pixels,
-      0,
-      0
-  );
-
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject
-  // point device context to the bitmap
-  SelectObject(
-      offscreen_buffer->frame_device_context, offscreen_buffer->bitmap_handle
-  );
-
-  offscreen_buffer->width  = LOWORD(lParam);
-  offscreen_buffer->height = HIWORD(lParam);
-}
-
-internal void
-win32_paint_bitmap(HWND window_handle, PAINTSTRUCT paint, HDC device_context)
-{
-  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
-  device_context = BeginPaint(
-      window_handle,
-      &paint
-  );
-
-  // NOTE: origin (0,0) is conventionally located at the top-left corner for
-  // Windows GDI.
-
-  /* https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
-   * Painting function to copy the pixel array over to the window in the
-   * specified rectangle. Performs a bit-block transfer between two device
-   * contexts.
-   */
-  BitBlt(
-      /* destination device context */
-      device_context,
-      /* x coordinate of the top-left corner of the destination rectangle */
-      paint.rcPaint.left,
-      /* y coordinate of the top-left corner of the destination rectangle */
-      paint.rcPaint.top,
-      /* width and height */
-      paint.rcPaint.right - paint.rcPaint.left,
-      paint.rcPaint.bottom - paint.rcPaint.top,
-      /* source device context */
-      win32_offscreen_buffer.frame_device_context,
-      /* x coordinate of the top-left corner of the source rectangle */
-      paint.rcPaint.left,
-      /* y coordinate of the top-left corner of the source rectangle */
-      paint.rcPaint.top,
-      /* copy from source bitmap to destination bitmap */
-      SRCCOPY
-  );
-
-  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-beginpaint
-  EndPaint(window_handle, &paint);
 }
 
 internal void win32_display_buffer_in_window(
@@ -573,6 +483,11 @@ int WINAPI WinMain(
 
   HWND window_handle = NULL;
   static MSG msg     = {0};
+
+  u32 BYTES_PER_PIXEL = 4;
+  usize max_buffer_size = cast(usize)MAX_WIDTH * MAX_HEIGHT * BYTES_PER_PIXEL;
+  Arena* arena = arena_alloc();
+  win32_offscreen_buffer.pixels = push_array(arena, u8, max_buffer_size);
 
   win32_resize_dib_section(&win32_offscreen_buffer, 1280, 720);
 
@@ -944,7 +859,6 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
       /*
       static PAINTSTRUCT paint;
       static HDC device_context;
-      win32_paint_bitmap(window_handle, paint, device_context);
       */
 
       PAINTSTRUCT paint;
@@ -973,7 +887,6 @@ win32WndProc(HWND window_handle, UINT msg, WPARAM wParam, LPARAM lParam)
     //  win32_resize_dib_section(win32_offscreen_buffer, width, height);
     //  */
 
-    //  win32_resize_bitmap(&win32_offscreen_buffer, lParam);
     //} break;
     /// }}}
     default: {
@@ -1414,9 +1327,6 @@ int main(void)
   // XSetForeground(mainDisplay, gc, BlackPixel(mainDisplay, screen));
   int screen = DefaultScreen(mainDisplay);
 
-  // 3840 * 2160 * 4 bytes = ~33 MB
-  u32 MAX_WIDTH = 3840;
-  u32 MAX_HEIGHT = 2160;
   usize max_buffer_size = cast(usize)MAX_WIDTH * MAX_HEIGHT * BYTES_PER_PIXEL;
   Arena* arena = arena_alloc();
   char* x11_backbuffer = push_array(arena, char, max_buffer_size);
