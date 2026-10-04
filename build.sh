@@ -3,10 +3,19 @@ set -e
 cd "$(dirname "$0")"
 
 # -----------------------------------------------------------------------------
+# Clean build directory if 'clean' argument provided
+# -----------------------------------------------------------------------------
+if [ "$1" = "clean" ]; then
+  echo "Cleaning build directory..."
+  rm -rf "build"
+  echo "Cleanup complete."
+  exit 0
+fi
+
+# -----------------------------------------------------------------------------
 # Default build configuration
 # -----------------------------------------------------------------------------
 EXECUTABLE="handmadehero"
-# Base flags shared by both GCC and Clang
 COMPILER_DEBUG_FLAGS="-g -fsanitize=address"
 COMPILER_WARNING_FLAGS="-Wall -Wextra -pedantic -Wimplicit"
 COMPILER_FLAGS="$COMPILER_DEBUG_FLAGS $COMPILER_WARNING_FLAGS"
@@ -20,12 +29,11 @@ case "$COMPILER" in
   gcc|clang)
     ;;
   *)
-    echo "Error: Unsupported compiler '$COMPILER'. Usage: $0 [gcc|clang]" >&2
+    echo "Error: Unsupported option '$COMPILER'. Usage: $0 [gcc|clang|clean]" >&2
     exit 1
     ;;
 esac
 
-# Retrieve compiler version (supported by both GCC and Clang)
 COMPILER_VERSION="$($COMPILER -dumpversion 2>/dev/null || echo "unknown")"
 BUILD_DIR="$(pwd)/build"
 EXECUTABLE_PATH="$BUILD_DIR/$EXECUTABLE"
