@@ -2,29 +2,91 @@
 setlocal
 
 :: -----------------------------------------------------------------------------
-:: Locate Visual Studio via vswhere.exe and initialize environment
+:: Locate Visual Studio and initialize environment (with 32-bit fallback)
 :: -----------------------------------------------------------------------------
 if defined DevEnvDir goto :EnvironmentReady
 
+:: Try vswhere.exe if it exists
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" set "VSWHERE=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe"
 
-if not exist "%VSWHERE%" (
-    echo Error: vswhere.exe was not found. Please ensure Visual Studio is installed. >&2
-    exit /b 1
+if exist "%VSWHERE%" (
+    :: Look for 64-bit build tools
+    for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+        if exist "%%i\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS_SCRIPT=%%i\VC\Auxiliary\Build\vcvars64.bat"
+            set "VCVARS_ARG="
+            set "ARCH_MSG=64-bit"
+            goto :InitializeEnvironment
+        )
+    )
+    :: Fallback: Look for any VS installation to grab 32-bit build tools
+    for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -property installationPath`) do (
+        if exist "%%i\VC\Auxiliary\Build\vcvars32.bat" (
+            set "VCVARS_SCRIPT=%%i\VC\Auxiliary\Build\vcvars32.bat"
+            set "VCVARS_ARG="
+            set "ARCH_MSG=32-bit (Fallback)"
+            goto :InitializeEnvironment
+        )
+    )
 )
 
-for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
-    set "VS_INSTALL_DIR=%%i"
+:: Scan default directories for modern VS (2022, 2019, 2017)
+for %%D in ("%ProgramFiles%" "%ProgramFiles(x86)%" "C:\Program Files" "C:\Program Files (x86)") do (
+    for %%Y in (2022 2019 2017) do (
+        for %%E in (Community Professional Enterprise BuildTools) do (
+            if exist "%%~D\Microsoft Visual Studio\%%Y\%%E\VC\Auxiliary\Build\vcvars64.bat" (
+                set "VCVARS_SCRIPT=%%~D\Microsoft Visual Studio\%%Y\%%E\VC\Auxiliary\Build\vcvars64.bat"
+                set "VCVARS_ARG="
+                set "ARCH_MSG=64-bit"
+                goto :InitializeEnvironment
+            )
+            if exist "%%~D\Microsoft Visual Studio\%%Y\%%E\VC\Auxiliary\Build\vcvars32.bat" (
+                set "VCVARS_SCRIPT=%%~D\Microsoft Visual Studio\%%Y\%%E\VC\Auxiliary\Build\vcvars32.bat"
+                set "VCVARS_ARG="
+                set "ARCH_MSG=32-bit (Fallback)"
+                goto :InitializeEnvironment
+            )
+        )
+    )
+)
+:: Scan default directories for legacy VS (2015 down to 2008)
+for %%D in ("%ProgramFiles(x86)%" "%ProgramFiles%" "C:\Program Files (x86)" "C:\Program Files") do (
+    for %%V in (14.0 12.0 11.0 10.0 9.0) do (
+        if exist "%%~D\Microsoft Visual Studio %%V\VC\vcvarsall.bat" (
+            :: Check if the 64-bit native or cross-compiler actually exists
+            if exist "%%~D\Microsoft Visual Studio %%V\VC\bin\amd64\cl.exe" (
+                set "VCVARS_SCRIPT=%%~D\Microsoft Visual Studio %%V\VC\vcvarsall.bat"
+                set "VCVARS_ARG=amd64"
+                set "ARCH_MSG=64-bit"
+                goto :InitializeEnvironment
+            ) else if exist "%%~D\Microsoft Visual Studio %%V\VC\bin\x86_amd64\cl.exe" (
+                set "VCVARS_SCRIPT=%%~D\Microsoft Visual Studio %%V\VC\vcvarsall.bat"
+                set "VCVARS_ARG=x86_amd64"
+                set "ARCH_MSG=64-bit"
+                goto :InitializeEnvironment
+            ) else (
+                :: Fallback to 32-bit x86
+                set "VCVARS_SCRIPT=%%~D\Microsoft Visual Studio %%V\VC\vcvarsall.bat"
+                set "VCVARS_ARG=x86"
+                set "ARCH_MSG=32-bit (Fallback)"
+                goto :InitializeEnvironment
+            )
+        )
+    )
 )
 
-if not defined VS_INSTALL_DIR (
-    echo Error: Could not locate a Visual Studio installation with the VC++ toolchain. >&2
-    exit /b 1
-)
+echo Error: Could not locate Visual Studio via vswhere or standard directories. >&2
+exit /b 1
 
+:InitializeEnvironment
 set VSCMD_DEBUG=3
-call "%VS_INSTALL_DIR%\VC\Auxiliary\Build\vcvars64.bat" > msvc_debug_log.txt
+echo Initializing %ARCH_MSG% MSVC environment...
+if defined VCVARS_ARG (
+    call "%VCVARS_SCRIPT%" %VCVARS_ARG% > msvc_debug_log.txt
+) else (
+    call "%VCVARS_SCRIPT%" > msvc_debug_log.txt
+)
 
 :EnvironmentReady
 
@@ -36,20 +98,8 @@ set EXECUTABLE=handmadehero.exe
 :: -----------------------------------------------------------------------------
 :: Compiler Flags
 :: -----------------------------------------------------------------------------
-:: -Zi: Generate complete debug information
-:: -FC: Full paths in error diagnostics
 set DEBUG_FLAGS=-Zi -FC
-
-:: -W4: High warning level
-:: -wd4201: Nameless struct/union (used constantly in Windows SDK headers like windows.h)
-:: -wd4100: Unreferenced formal parameter (common in Win32 callbacks like WindowProc)
-:: -wd4189: Local variable is initialized but not referenced
-:: -wd4505: Unreferenced local function has been removed
 set WARNING_FLAGS=-W4 -wd4201 -wd4100 -wd4189 -wd4505
-
-:: Optional modern alternative for external headers (MSVC 2019 16.10+):
-:: Treats #include <...> as external and silences warnings originating inside them:
-:: set EXTERNAL_FLAGS=-external:anglebrackets -external:W0
 set COMPILER_FLAGS=%DEBUG_FLAGS% %WARNING_FLAGS%
 set LIBS=user32.lib gdi32.lib
 
