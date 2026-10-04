@@ -2,48 +2,62 @@
 set -e
 cd "$(dirname "$0")"
 
-# -----------------------------------------------------------------------------
-# Clean build directory if 'clean' argument provided
-# -----------------------------------------------------------------------------
-if [ "$1" = "clean" ]; then
-  echo "Cleaning build directory..."
-  rm -rf "build"
-  echo "Cleanup complete."
-  exit 0
-fi
+COMPILER="gcc"
+BUILD_MODE="debug"
+
+for arg in "$@"; do
+  case "$arg" in
+    clean)
+      echo "Cleaning build directory..."
+      rm -rf "build"
+      echo "Cleanup complete."
+      exit 0
+      ;;
+    release)
+      BUILD_MODE="release"
+      ;;
+    debug)
+      BUILD_MODE="debug"
+      ;;
+    gcc|clang)
+      COMPILER="$arg"
+      ;;
+    *)
+      echo "Error: Unknown argument '$arg'." >&2
+      echo "Usage: $0 [gcc|clang] [debug|release] [clean]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 # -----------------------------------------------------------------------------
-# Default build configuration
+# Build Configuration & Flags
 # -----------------------------------------------------------------------------
 EXECUTABLE="handmadehero"
-COMPILER_DEBUG_FLAGS="-g -fsanitize=address"
-COMPILER_WARNING_FLAGS="-Wall -Wextra -pedantic -Wimplicit"
-COMPILER_FLAGS="$COMPILER_DEBUG_FLAGS $COMPILER_WARNING_FLAGS"
+WARNING_FLAGS="-Wall -Wextra -pedantic -Wimplicit"
 LIBS="-lX11 -lasound -lm"
 
-# Default to gcc if no argument is provided ($1 is empty)
-COMPILER="${1:-gcc}"
+if [ "$BUILD_MODE" = "release" ]; then
+  # -O2: Standard optimizations
+  # -DNDEBUG: Disables standard C asserts
+  MODE_FLAGS="-O2 -DNDEBUG"
+else
+  # -g: Full debug symbols
+  # -fsanitize=address: Memory error checks (AddressSanitizer)
+  MODE_FLAGS="-g -fsanitize=address -DDEBUG"
+fi
 
-# Validate compiler choice
-case "$COMPILER" in
-  gcc|clang)
-    ;;
-  *)
-    echo "Error: Unsupported option '$COMPILER'. Usage: $0 [gcc|clang|clean]" >&2
-    exit 1
-    ;;
-esac
+COMPILER_FLAGS="$MODE_FLAGS $WARNING_FLAGS"
 
 COMPILER_VERSION="$($COMPILER -dumpversion 2>/dev/null || echo "unknown")"
 BUILD_DIR="$(pwd)/build"
 EXECUTABLE_PATH="$BUILD_DIR/$EXECUTABLE"
 
-echo "Building with $COMPILER ($COMPILER_VERSION)..."
-echo "Executable location: $EXECUTABLE_PATH"
+echo "Building $EXECUTABLE [$BUILD_MODE] with $COMPILER ($COMPILER_VERSION)..."
+echo "Target location: $EXECUTABLE_PATH"
 
 mkdir -p "build"
 
-# compile and return
 (
   cd "build"
   $COMPILER $COMPILER_FLAGS -o "$EXECUTABLE" ../src/main.c $LIBS
