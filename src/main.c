@@ -2,7 +2,6 @@
  */
 
 #include <assert.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <math.h>
 
@@ -16,12 +15,45 @@
 #include "arena.c"
 #include "wav.c"
 
+/* Debug Print Macro for win32 and linux
+ * Usage:
+ *   DEBUG_LOG("Cursor positions - Play: %lu, Write: %lu", play_cursor, write_cursor);
+ *   DEBUG_LOG("Sine wave phase: %f", sound_output.t_sine);
+*/
+#ifdef DEBUG
+#  if defined(_WIN32)
+   __declspec(dllimport) void __stdcall OutputDebugStringA(const char* lpOutputString);
+    // Windows Debug Logger
+#    define DEBUG_LOG(format, ...)                                        \
+      do                                                                  \
+      {                                                                   \
+        char dbg_msg[512] = {0};                                          \
+        snprintf(dbg_msg, sizeof(dbg_msg), format "\n", ##__VA_ARGS__);   \
+        OutputDebugStringA(dbg_msg);                                      \
+      } while (0)
+#  elif defined(__linux__)
+    // Linux Debug Logger
+#    define DEBUG_LOG(format, ...)                                        \
+      do                                                                  \
+      {                                                                   \
+        fprintf(stderr, "[DEBUG] " format "\n", ##__VA_ARGS__);           \
+      } while (0)
+#  else
+    // Unknown OS Fallback
+#    define DEBUG_LOG(format, ...)
+#  endif
+#else
+  // If we are in Release mode, DEBUG_LOG does nothing.
+  // The compiler will should erase these lines from the final build.
+#  define DEBUG_LOG(format, ...)
+#endif
+
 /* main loop */
 global b32 running = true;
 global u32 active_prng_seed = 123456789;
 // max resolution: 3840 * 2160 * 4 bytes = ~33 MB
-global read_only u32 MAX_WIDTH = 3840;
-global read_only u32 MAX_HEIGHT = 2160;
+global read_only s32 MAX_WIDTH = 3840;
+global read_only s32 MAX_HEIGHT = 2160;
 // 4 bytes for 32-bit color depth (e.g. BGRA)
 global read_only u32 BYTES_PER_PIXEL = 4;
 
@@ -1683,7 +1715,7 @@ int main(void)
     s64 cycles_elapsed = end_cycle_count - last_cycle_count;
     s32 megacycles_per_frame = cycles_elapsed / (1000 * 1000);
 
-    //DEBUG_LOG("µs/frame: %.2f | fps: %.2f | Mc/frame %d", elapsed_microseconds, fps, megacycles_per_frame);
+    DEBUG_LOG("µs/frame: %.2f | fps: %.2f | Mc/frame %d", elapsed_microseconds, fps, megacycles_per_frame);
 
     // Reset counters for the next frame
     last_cycle_count = end_cycle_count;
@@ -1698,8 +1730,7 @@ int main(void)
   if (image && image->data)
   {
     // Prevent XDestroyImage from deallocating the backbuffer
-    char* imgdata = image->data;
-    image->data   = NULL;
+    image->data = NULL;
   }
 
   // Cleanup

@@ -1,43 +1,175 @@
 /* vi: foldmethod=marker
  */
 
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
-
 #pragma once
+#pragma once
+#ifndef BASE_H
+#  define BASE_H
 
-/* Debug Print Macro for win32 and linux
- * Usage:
- *   DEBUG_LOG("Cursor positions - Play: %lu, Write: %lu", play_cursor, write_cursor);
- *   DEBUG_LOG("Sine wave phase: %f", sound_output.t_sine);
-*/
-#ifdef DEBUG
-#  if defined(_WIN32)
-    // Windows Debug Logger
-#    define DEBUG_LOG(format, ...)                                        \
-      do                                                                  \
-      {                                                                   \
-        char dbg_msg[512] = {0};                                          \
-        snprintf(dbg_msg, sizeof(dbg_msg), format "\n", ##__VA_ARGS__);   \
-        OutputDebugStringA(dbg_msg);                                      \
-      } while (0)
-#  elif defined(__linux__)
-    // Linux Debug Logger
-#    define DEBUG_LOG(format, ...)                                        \
-      do                                                                  \
-      {                                                                   \
-        fprintf(stderr, "[DEBUG] " format "\n", ##__VA_ARGS__);           \
-      } while (0)
+///////////////////////// Foreign Includes {{{
+
+#if defined(__linux__) || defined(OS_LINUX)
+#  ifndef _GNU_SOURCE
+#    define _GNU_SOURCE
+#  endif
+#endif
+
+#include <string.h>
+#include <assert.h>
+#include <stddef.h>
+
+// Integer Types (handle missing <stdint.h> for Visual C++ 2008 and older)
+#if defined(_MSC_VER) && (_MSC_VER <= 1500)
+    typedef signed __int8      int8_t;
+    typedef signed __int16     int16_t;
+    typedef signed __int32     int32_t;
+    typedef signed __int64     int64_t;
+    typedef unsigned __int8    uint8_t;
+    typedef unsigned __int16   uint16_t;
+    typedef unsigned __int32   uint32_t;
+    typedef unsigned __int64   uint64_t;
+#  if defined(_WIN64)
+    typedef signed __int64     intptr_t;
+    typedef unsigned __int64   uintptr_t;
 #  else
-    // Unknown OS Fallback
-#    define DEBUG_LOG(format, ...)
+    typedef signed __int32     intptr_t;
+    typedef unsigned __int32   uintptr_t;
 #  endif
 #else
-  // If we are in Release mode, DEBUG_LOG does nothing.
-  // The compiler will should erase these lines from the final build.
-#  define DEBUG_LOG(format, ...)
+#  include <stdint.h>
 #endif
+
+#if !defined(__cplusplus)
+#  if defined(_MSC_VER) && (_MSC_VER >= 1800)
+#    include <stdbool.h>
+#  elif defined(_MSC_VER)
+#    ifndef __bool_true_false_are_defined
+       typedef unsigned char bool;
+#      define true  1
+#      define false 0
+#      define __bool_true_false_are_defined 1
+#    endif
+#  elif (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || defined(__GNUC__) || defined(__clang__)
+#    include <stdbool.h>
+#  else
+#    ifndef __bool_true_false_are_defined
+       typedef unsigned char bool;
+#      define true  1
+#      define false 0
+#      define __bool_true_false_are_defined 1
+#    endif
+#  endif
+#endif
+
+// }}} Foreign Includes
+
+///////////////////////// Context Macros {{{
+
+/*
+ * Compiler macros:    https://sourceforge.net/p/predef/wiki/Compilers/
+ * Language standards: https://sourceforge.net/p/predef/wiki/Standards/
+ * Architectures:      https://sourceforge.net/p/predef/wiki/Architectures/
+ * Operating systems:  https://sourceforge.net/p/predef/wiki/OperatingSystems/
+ * Libraries:          https://sourceforge.net/p/predef/wiki/Libraries/
+ *
+ */
+
+/* define compiler */
+#  if defined(_MSC_VER)
+#    define COMPILER_MSVC 1
+#  elif defined(__clang__)
+#    define COMPILER_CLANG 1
+#  elif defined(__GNUC__)
+#    define COMPILER_GCC 1
+#  else
+#    error no context for this compiler
+#  endif
+
+/* define operating system */
+#  if defined(_WIN32)
+#    define OS_WINDOWS 1
+#  elif defined(__gnu_linux__) || defined(__linux__)
+#    define OS_LINUX 1
+#  elif defined(__APPLE__) && defined(__MACH__)
+#    define OS_MAC 1
+#  elif defined(BSD) && defined(__FreeBSD__)
+#    define OS_FREEBSD 1
+#  else
+#    error missing os detection
+#  endif
+
+/* Architecture macros: https://wolfcon.github.io/Life/PreDefinedCC++CompilerMarcros.html */
+
+/* define architecture */
+#  if defined(__amd64__) || defined(_M_X64) || defined(_M_AMD64)
+#    define ARCH_X64 1
+#  elif defined(__i386__) || defined(_M_IX86) || defined(_X86_)
+#    define ARCH_X86 1
+#  elif defined(__arm__) || defined(_M_ARM)
+#    define ARCH_ARM 1
+#  elif defined(__aarch64__) || defined(_M_ARM64)
+#    define ARCH_ARM64 1
+#  elif defined(__mips__)
+#    define ARCH_MIPS 1
+#  elif defined(__powerpc) || defined(_M_PPC)
+#    define ARCH_PPC 1
+#  else
+#    error missing ARCH detection
+#  endif
+
+// Zero fill missing context macros
+#  if !defined(COMPILER_MSVC)
+#    define COMPILER_MSVC 0
+#  endif
+#  if !defined(COMPILER_CLANG)
+#    define COMPILER_CLANG 0
+#  endif
+#  if !defined(COMPILER_GCC)
+#    define COMPILER_GCC 0
+#  endif
+#  if !defined(COMPILER_TINYC)
+#    define COMPILER_TINYC 0
+#  endif
+#  if !defined(OS_WINDOWS)
+#    define OS_WINDOWS 0
+#  endif
+#  if !defined(OS_LINUX)
+#    define OS_LINUX 0
+#  endif
+#  if !defined(OS_MAC)
+#    define OS_MAC 0
+#  endif
+#  if !defined(OS_FREEBSD)
+#    define OS_FREEBSD 0
+#  endif
+#  if !defined(ARCH_X64)
+#    define ARCH_X64 0
+#  endif
+#  if !defined(ARCH_X86)
+#    define ARCH_X86 0
+#  endif
+#  if !defined(ARCH_ARM)
+#    define ARCH_ARM 0
+#  endif
+#  if !defined(ARCH_ARM64)
+#    define ARCH_ARM64 0
+#  endif
+#  if !defined(ARCH_MIPS)
+#    define ARCH_MIPS 0
+#  endif
+#  if !defined(ARCH_PPC)
+#    define ARCH_PPC 0
+#  endif
+#  if !defined(ENABLE_ASSERT)
+#    define ENABLE_ASSERT 0
+#  endif
+// End of if defined(_MSC_VER)
+
+////////////////////////////
+// End of Context Macros //
+///////////////////////////  }}}
+
+///////////////////////// Helper Macros {{{
 
 // searchable typecast
 #define cast(type) (type)
@@ -52,28 +184,6 @@
 #define local    static
 #define global   static
 #define read_only const
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef int8_t s8;
-typedef int16_t s16;
-typedef int32_t s32;
-typedef int64_t s64;
-
-typedef float f32;
-typedef double f64;
-
-typedef s8 b8;
-typedef s16 b16;
-typedef s32 b32;
-typedef s64 b64;
-
-typedef size_t usize;
-typedef intptr_t ssize;
-typedef uintptr_t uptr;
 
 #define enum8(name)  u8
 #define enum16(name) u16
@@ -204,6 +314,55 @@ typedef uintptr_t uptr;
  */
 #define AsciiID4(a, b, c, d) ((cast(u32)(d) << 24) | (cast(u32)(c) << 16) | (cast(u32)(b) << 8) | (cast(u32)(a)))
 
+///////////////////////////
+// End of Helper Macros //
+///////////////////////// }}}
+
+///////////////////////// Basic Types {{{
+
+// Short names for primitive types
+
+// https://cplusplus.com/reference/cstdint/
+// https://en.cppreference.com/w/c/types/integer
+
+// Signed with bitcount
+typedef int8_t  s8;
+typedef int16_t s16;
+typedef int32_t s32;
+typedef int64_t s64;
+
+// Unsigned with bitcount
+typedef uint8_t  u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+
+// Booleans with bitcount
+typedef s8  b8;
+typedef s16 b16;
+typedef s32 b32;
+typedef s64 b64;
+
+// Floats with bitcount
+typedef float  f32;
+typedef double f64;
+
+typedef size_t usize;
+typedef intptr_t ssize;
+typedef uintptr_t uptr;
+
+typedef char         byte;
+typedef unsigned int uint;
+
+// define UTF-16
+// https://en.cppreference.com/w/c/string/multibyte/char16_t
+// NOTE: uchar.h requires C11 and is not supported for Mac
+typedef uint16_t c16;
+
+//////////////////////////
+// End of Basic Types ///
+//////////////////////// }}}
+
 ///////////////////////// Basic Constants {{{
 
 global const s8  MIN_S8  = (s8) 0x80;
@@ -238,3 +397,5 @@ global const f64 GOLDEN_RATIO_SMALL_F64 = 0.61803398875;
 /////////////////////////////////
 //// End of Basic Constants ////
 /////////////////////////////// }}}
+
+#endif // BASE_H

@@ -25,7 +25,7 @@ internal b32 os_memory_commit(void* memptr, usize allocation_size)
 }
 
 /* returns 0 on failure, on success returns nonzero value.
-/* NOTE: usize is not used for win32 implementation, but is used for other
+ * NOTE: usize is not used for win32 implementation, but is used for other
  *      operating systems, so it is still provided for the sake of completeness.
  */
 internal b32 os_memory_decommit(void* memptr, usize allocation_size)
@@ -120,7 +120,7 @@ b32 os_file_read(OS_Handle file, void* buffer, u32 bytes_to_read)
 
   if (!success || bytes_read != bytes_to_read)
   {
-    DEBUG_LOG("Error reading file");
+    //DEBUG_LOG("Error reading file");
     return 0;
   }
 
@@ -152,7 +152,7 @@ b32 os_file_write(OS_Handle file, const void* buffer, u32 bytes_to_write)
 
   if (!success || bytes_written != bytes_to_write)
   {
-    DEBUG_LOG("Error writing file contents.");
+    //DEBUG_LOG("Error writing file contents.");
     return 0;
   }
 
@@ -349,7 +349,7 @@ b32 os_file_read(OS_Handle file, void* buffer, u32 bytes_to_read)
 
   if (bytes_read == -1 || cast(u32)bytes_read != bytes_to_read)
   {
-    DEBUG_LOG("Error reading file contents");
+    //DEBUG_LOG("Error reading file contents");
     return 0;
   }
 
@@ -374,7 +374,7 @@ b32 os_file_write(OS_Handle file, const void* buffer, u32 bytes_to_write)
 
   if (bytes_written == -1 || cast(u32)bytes_written != bytes_to_write)
   {
-    DEBUG_LOG("Error writing file contents.");
+    //DEBUG_LOG("Error writing file contents.");
     return 0;
   }
 
