@@ -499,6 +499,8 @@ int WINAPI WinMain(
   QueryPerformanceFrequency(&perf_count_frequency_result);
   s64 perf_count_frequency = perf_count_frequency_result.QuadPart;
 
+  win32_load_xinput();
+
   (void)pCmdLine;
   (void)hPrevInstance;
 
