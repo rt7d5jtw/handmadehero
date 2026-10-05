@@ -60,5 +60,5 @@ mkdir -p "build"
 
 (
   cd "build"
-  $COMPILER $COMPILER_FLAGS -o "$EXECUTABLE" ../src/main.c $LIBS
+  $COMPILER "$COMPILER_FLAGS" -o "$EXECUTABLE" ../src/main.c "$LIBS"
 )
