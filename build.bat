@@ -168,7 +168,7 @@ pushd "%BUILD_DIR%"
 :: Build Execution
 :: -----------------------------------------------------------------------------
 echo Compiling %EXECUTABLE% [%BUILD_MODE%]...
-cl %COMPILER_FLAGS% -Fe:%EXECUTABLE% ..\src\main.c %LIBS%
+cl %COMPILER_FLAGS% -Fe:%EXECUTABLE% ..\src\handmade.c %LIBS%
 set BUILD_STATUS=%ERRORLEVEL%
 
 echo --------------------------------------------------
