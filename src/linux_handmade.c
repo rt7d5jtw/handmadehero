@@ -139,72 +139,6 @@ void x11_render_buffer(Display* display, Window window, GC gc, XImage* image)
   }
 }
 
-void draw_snow(XImage* image)
-{
-  assert(
-      image != NULL && image->data != NULL &&
-      "XImage and XImage buffer must not be null"
-  );
-
-  int height       = image->height;
-  int width        = image->width;
-  int pitch        = image->bytes_per_line;
-  u8* buffer_start = (u8*)image->data;
-
-  for (int y = 0; y < height; y += 1)
-  {
-    u32* pixel = (u32*)(buffer_start + (y * pitch));
-
-    for (int x = 0; x < width; x += 1)
-    {
-      u32 bits = xorshift32();
-      u8 noise = (u8)(bits & (bits >> 8)) & (bits >> 16);
-
-      u8 blue  = noise;
-      u8 green = noise;
-      u8 red   = noise;
-      u8 alpha = 0;
-
-      u32 packed_channels = (alpha << 24) | (red << 16) | (green << 8) | blue;
-      *pixel++            = packed_channels;
-    }
-  }
-}
-
-void draw_random_gradient(u64 x_offset, u64 y_offset, XImage* image)
-{
-  assert(
-      image != NULL && image->data != NULL &&
-      "XImage and XImage buffer must not be null"
-  );
-
-  int height = image->height;
-  int width  = image->width;
-  // get stride (pitch) from the XImage struct
-  int pitch        = image->bytes_per_line;
-  u8* buffer_start = (u8*)image->data;
-
-  for (int y = 0; y < height; y += 1)
-  {
-    // calculate the starting address of the current row
-    u32* pixel = (u32*)(buffer_start + (y * pitch));
-    for (int x = 0; x < width; x += 1)
-    {
-      // PIXEL COLOR CALCULATION
-      u8 blue  = 150 + (u8)((x + y_offset) % 100);
-      u8 green = 50 + (u8)((y + x_offset) % 100);
-      u8 red   = 25 + (u8)(x - x_offset);
-      u8 alpha = 0;
-
-      // NOTE: explicitly packing 32-bits, BGRA/BGR packing assumed, X11's byte
-      // order can vary.
-      u32 packed_channels = (alpha << 24) | (red << 16) | (green << 8) | blue;
-      // direct memory write
-      *pixel++ = packed_channels;
-    }
-  }
-}
-
 void x11_draw_pixel(XImage* image, int x, int y, u64 color)
 {
   if (!image || x < 0 || y < 0 || x >= image->width || y >= image->height)
@@ -555,7 +489,11 @@ int main(void)
             }
             else if (current_gui_mode == MODE_GRADIENT_ANIMATION)
             {
-              draw_random_gradient(x_offset, y_offset, image);
+              int height = image->height;
+              int width  = image->width;
+              int pitch  = image->bytes_per_line;
+              u32* buffer_start = (u32*)image->data;
+              draw_random_gradient(pitch, buffer_start, width, height, x_offset, y_offset);
             }
           }
           break;
@@ -749,8 +687,8 @@ int main(void)
       ++x_offset;
       y_offset += 2;
       // render
-      // draw_random_gradient(x_offset, y_offset, image);
-      draw_snow(image);
+      // draw_random_gradient(image->bytes_per_line, image->data, image->width, image->height, x_offset, y_offset, image);
+      draw_snow((u32*)image->data, image->width, image->height);
       x11_render_buffer(mainDisplay, mainWindow, gc, image);
     }
 
