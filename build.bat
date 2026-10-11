@@ -25,6 +25,9 @@ for %%a in (%*) do (
 :: -----------------------------------------------------------------------------
 :: Locate Visual Studio and initialize environment (with cache)
 :: -----------------------------------------------------------------------------
+where cl >nul 2>nul
+if %ERRORLEVEL% == 0 goto :EnvironmentReady
+
 if defined VCINSTALLDIR goto :EnvironmentReady
 if defined DevEnvDir goto :EnvironmentReady
 
