@@ -1,5 +1,6 @@
 /* Forward declaration */
 #include "handmade.h"
+
 internal LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
 
 #  define _CRT_SECURE_NO_WARNINGS
@@ -203,6 +204,7 @@ internal void win32_clear_sound_buffer(Win32SoundOutput* sound_output)
   DWORD bytes_to_write      = (DWORD) sound_output->secondary_buffer_size;
 
   HRESULT directsound_lock = secondary_directsound_buffer->lpVtbl->Lock(
+      secondary_directsound_buffer,
       write_cursor_offset,
       bytes_to_write,
       &region1,
@@ -234,7 +236,7 @@ internal void win32_fill_sound_buffer(
     Win32SoundOutput* sound_output,
     DWORD byte_to_lock,
     DWORD bytes_to_write,
-    SoundOutputBuffer* source_buffer;
+    AudioBuffer* source_buffer
 )
 {
   VOID* region1;
@@ -494,7 +496,7 @@ int WINAPI WinMain(
   b32 sound_is_playing = 0;
 
   win32_init_directsound(window_handle, sound_output.samples_per_second, sound_output.secondary_buffer_size);
-  win32_fill_sound_buffer(&sound_output, 0, (sound_output.latency_sample_count * sound_output.bytes_per_sample));
+  //win32_fill_sound_buffer(&sound_output, 0, (sound_output.latency_sample_count * sound_output.bytes_per_sample), &sound_output);
 
   if (!sound_is_playing)
   {
@@ -512,6 +514,7 @@ int WINAPI WinMain(
   offscreen_buffer.bytes_per_pixel = win32_offscreen_buffer.bytes_per_pixel;
   offscreen_buffer.width  = win32_offscreen_buffer.width;
   offscreen_buffer.height = win32_offscreen_buffer.height;
+  offscreen_buffer.memory = win32_offscreen_buffer.pixels;
 
   while (running)
   {
@@ -613,14 +616,16 @@ int WINAPI WinMain(
       sound_is_valid = true;
     }
 
-    SoundOutputBuffer sound_buffer = {0}
-    sound_buffer.samples_per_second = sound_output.samples_per_second;
-    sound_buffer.sample_count = bytes_to_write / sound_output.bytes_per_sample;
-    sound_buffer.samples = samples;
+    AudioBuffer audio_buffer = {0};
+    audio_buffer.samples_per_second = audio_buffer.samples_per_second;
+    audio_buffer.sample_count = bytes_to_write / sound_output.bytes_per_sample;
+    audio_buffer.samples = samples;
+    audio_buffer.tone_hz = sound_output.tone_hz;
+    audio_buffer.tone_volume = sound_output.tone_volume;
 
     game_update_and_render(
-      sound_buffer,
-      offscreen_buffer,
+      &audio_buffer,
+      &offscreen_buffer,
       x_offset,
       y_offset
     );
@@ -630,7 +635,8 @@ int WINAPI WinMain(
       win32_fill_sound_buffer(
           &sound_output,
           byte_to_lock,
-          bytes_to_write
+          bytes_to_write,
+          &audio_buffer
       );
     }
 

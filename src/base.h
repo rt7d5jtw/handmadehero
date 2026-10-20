@@ -351,7 +351,7 @@ typedef size_t usize;
 typedef intptr_t ssize;
 typedef uintptr_t uptr;
 
-typedef char         byte;
+typedef u8 byte;
 typedef unsigned int uint;
 
 // define UTF-16
