@@ -216,13 +216,13 @@ internal void win32_clear_sound_buffer(Win32SoundOutput* sound_output)
 
   if (SUCCEEDED(directsound_lock))
   {
-    s16* dest_sample   = (s16*)region1;
+    u8* dest_sample = (u8*)region1;
     for (DWORD byte_index = 0; byte_index < region1_size; byte_index += 1)
     {
       *dest_sample++ = 0;
     }
 
-    dest_sample = (s16*)region2;
+    dest_sample = (u8*)region2;
     for (DWORD byte_index = 0; byte_index < region2_size; byte_index += 1)
     {
       *dest_sample++ = 0;
@@ -617,7 +617,7 @@ int WINAPI WinMain(
     }
 
     AudioBuffer audio_buffer = {0};
-    audio_buffer.samples_per_second = audio_buffer.samples_per_second;
+    audio_buffer.samples_per_second = sound_output.samples_per_second;
     audio_buffer.sample_count = bytes_to_write / sound_output.bytes_per_sample;
     audio_buffer.samples = samples;
     audio_buffer.tone_hz = sound_output.tone_hz;
