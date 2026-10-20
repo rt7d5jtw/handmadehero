@@ -435,6 +435,12 @@ int main(void)
     }
   }
 
+  OffscreenBuffer offscreen_buffer = {0};
+  offscreen_buffer.width           = image->width;
+  offscreen_buffer.height          = image->height;
+  offscreen_buffer.bytes_per_pixel = BYTES_PER_PIXEL;
+  offscreen_buffer.memory          = image->data;
+
   // https://tronche.com/gui/x/xlib/event-handling/XPending.html
   while (running)
   {
@@ -489,11 +495,7 @@ int main(void)
             }
             else if (current_gui_mode == MODE_GRADIENT_ANIMATION)
             {
-              int height = image->height;
-              int width  = image->width;
-              int pitch  = image->bytes_per_line;
-              u32* buffer_start = (u32*)image->data;
-              draw_random_gradient(pitch, buffer_start, width, height, x_offset, y_offset);
+              draw_random_gradient(&offscreen_buffer, x_offset, y_offset);
             }
           }
           break;
@@ -656,21 +658,17 @@ int main(void)
 
       if (frames_ready > 0)
       {
-        frames_ready    = ClampTop(frames_ready, 2000);
-        s16* sample_out = samples;
+        frames_ready = ClampTop(frames_ready, 2000);
 
-        // Generate audio frames
-        for (snd_pcm_sframes_t idx = 0; idx < frames_ready; idx += 1)
-        {
-          f32 sine_value   = sinf(sound_output.t_sine);
-          s16 sample_value = (s16)(sine_value * sound_output.tone_volume);
+        AudioBuffer audio_buffer = {0};
+        audio_buffer.samples_per_second = sound_output.samples_per_second;
+        audio_buffer.sample_count       = cast(s32)frames_ready;
+        audio_buffer.tone_hz            = sound_output.tone_hz;
+        audio_buffer.tone_volume        = cast(s16)sound_output.tone_volume;
+        audio_buffer.samples            = samples;
 
-          *sample_out++ = sample_value; // Left channel
-          *sample_out++ = sample_value; // Right channel
-
-          sound_output.t_sine += (2.0f * PI_F32 * 1.0) / (f32)sound_output.wave_period;
-          ++sound_output.running_sample_index;
-        }
+        // write audio frames
+        fill_audio_buffer(&audio_buffer);
 
         snd_pcm_sframes_t frames_written = snd_pcm_writei(pcm_handle, samples, frames_ready);
         if (frames_written == -EPIPE)
@@ -687,8 +685,8 @@ int main(void)
       ++x_offset;
       y_offset += 2;
       // render
-      // draw_random_gradient(image->bytes_per_line, image->data, image->width, image->height, x_offset, y_offset, image);
-      draw_snow((u32*)image->data, image->width, image->height);
+      draw_random_gradient(&offscreen_buffer, x_offset, y_offset);
+      //draw_snow((u32*)image->data, image->width, image->height);
       x11_render_buffer(mainDisplay, mainWindow, gc, image);
     }
 

@@ -1,4 +1,5 @@
 /* Forward declaration */
+#include "handmade.h"
 internal LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
 
 #  define _CRT_SECURE_NO_WARNINGS
@@ -191,10 +192,49 @@ internal Win32WindowDimensions win32_get_window_dimensions(HWND window_handle)
   return dims;
 }
 
+internal void win32_clear_sound_buffer(Win32SoundOutput* sound_output)
+{
+  VOID* region1;
+  DWORD region1_size;
+  VOID* region2;
+  DWORD region2_size;
+
+  DWORD write_cursor_offset = 0;
+  DWORD bytes_to_write      = (DWORD) sound_output->secondary_buffer_size;
+
+  HRESULT directsound_lock = secondary_directsound_buffer->lpVtbl->Lock(
+      write_cursor_offset,
+      bytes_to_write,
+      &region1,
+      &region1_size,
+      &region2,
+      &region2_size,
+      0
+  );
+
+  if (SUCCEEDED(directsound_lock))
+  {
+    s16* dest_sample   = (s16*)region1;
+    for (DWORD byte_index = 0; byte_index < region1_size; byte_index += 1)
+    {
+      *dest_sample++ = 0;
+    }
+
+    dest_sample = (s16*)region2;
+    for (DWORD byte_index = 0; byte_index < region2_size; byte_index += 1)
+    {
+      *dest_sample++ = 0;
+    }
+
+    secondary_directsound_buffer->lpVtbl->Unlock(secondary_directsound_buffer, region1, region1_size, region2, region2_size);
+  }
+}
+
 internal void win32_fill_sound_buffer(
     Win32SoundOutput* sound_output,
     DWORD byte_to_lock,
-    DWORD bytes_to_write
+    DWORD bytes_to_write,
+    SoundOutputBuffer* source_buffer;
 )
 {
   VOID* region1;
@@ -215,28 +255,22 @@ internal void win32_fill_sound_buffer(
 
   if (SUCCEEDED(directsound_lock))
   {
-    s16* sample_out            = (s16*)region1;
+    s16* dest_sample   = (s16*)region1;
+    s16* source_sample = source_buffer->samples;
     DWORD region1_sample_count = region1_size / sound_output->bytes_per_sample;
     for (DWORD sampleIndex = 0; sampleIndex < region1_sample_count; sampleIndex += 1)
     {
-      f32 sine_value   = sinf(sound_output->t_sine);
-      s16 sample_value = (s16)(sine_value * sound_output->tone_volume);
-      *sample_out++    = sample_value;
-      *sample_out++    = sample_value;
-
-      sound_output->t_sine += (2.0f * PI_F32 * 1.0f) / (f32)sound_output->wave_period;
+      *dest_sample++    = *source_sample++;
+      *dest_sample++    = *source_sample++;
       ++sound_output->running_sample_index;
     }
-    sample_out                 = (s16*)region2;
+
+    dest_sample = (s16*)region2;
     DWORD region2_sample_count = region2_size / sound_output->bytes_per_sample;
     for (DWORD sampleIndex = 0; sampleIndex < region2_sample_count; sampleIndex += 1)
     {
-      f32 sine_value   = sinf(sound_output->t_sine);
-      s16 sample_value = (s16)(sine_value * sound_output->tone_volume);
-      *sample_out++    = sample_value;
-      *sample_out++    = sample_value;
-
-      sound_output->t_sine += (2.0f * PI_F32 * 1.0f) / (f32)sound_output->wave_period;
+      *dest_sample++    = *source_sample++;
+      *dest_sample++    = *source_sample++;
       ++sound_output->running_sample_index;
     }
 
@@ -261,7 +295,7 @@ internal void win32_resize_dib_section(
     int height
 )
 {
-  width = ClampTop(width, MAX_WIDTH);
+  width  = ClampTop(width, MAX_WIDTH);
   height = ClampTop(height, MAX_HEIGHT);
 
   offscreen_buffer->width           = width;
@@ -468,9 +502,16 @@ int WINAPI WinMain(
     sound_is_playing = 1;
   }
 
+  s16* samples = push_array(arena, s16, sound_output.secondary_buffer_size);
+
   u64 last_cycle_count = __rdtsc();
   LARGE_INTEGER last_counter;
   QueryPerformanceCounter(&last_counter);
+
+  OffscreenBuffer offscreen_buffer = {0};
+  offscreen_buffer.bytes_per_pixel = win32_offscreen_buffer.bytes_per_pixel;
+  offscreen_buffer.width  = win32_offscreen_buffer.width;
+  offscreen_buffer.height = win32_offscreen_buffer.height;
 
   while (running)
   {
@@ -537,22 +578,25 @@ int WINAPI WinMain(
     // GDI Drawing logic
 
     //draw_random_gradient(win32_offscreen_buffer.bytes_per_pixel, win32_offscreen_buffer.width, win32_offscreen_buffer.height, x_offset, y_offset);
-    draw_snow(
-        win32_offscreen_buffer.pixels,
-        win32_offscreen_buffer.width,
-        win32_offscreen_buffer.height
-    );
+    //draw_snow(
+    //    win32_offscreen_buffer.pixels,
+    //    win32_offscreen_buffer.width,
+    //    win32_offscreen_buffer.height
+    //);
 
     // DirectSound API logic
-    DWORD play_cursor;
-    DWORD write_cursor;
+    DWORD byte_to_lock    = 0;
+    DWORD target_cursor   = 0;
+    DWORD bytes_to_write  = 0;
+    DWORD play_cursor     = 0;
+    DWORD write_cursor    = 0;
 
+    b32 sound_is_valid = false;
     HRESULT directsound_cursor_positions = secondary_directsound_buffer->lpVtbl->GetCurrentPosition(secondary_directsound_buffer, &play_cursor, &write_cursor);
     if (sound_is_playing && SUCCEEDED(directsound_cursor_positions))
     {
-      DWORD byte_to_lock  = (sound_output.running_sample_index * sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
-      DWORD target_cursor = ((play_cursor + (sound_output.latency_sample_count * sound_output.bytes_per_sample)) % sound_output.secondary_buffer_size);
-      DWORD bytes_to_write;
+      byte_to_lock  = (sound_output.running_sample_index * sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
+      target_cursor = ((play_cursor + (sound_output.latency_sample_count * sound_output.bytes_per_sample)) % sound_output.secondary_buffer_size);
 
       if (byte_to_lock > target_cursor)
       {
@@ -566,6 +610,23 @@ int WINAPI WinMain(
         bytes_to_write = target_cursor - byte_to_lock; // region 1
       }
 
+      sound_is_valid = true;
+    }
+
+    SoundOutputBuffer sound_buffer = {0}
+    sound_buffer.samples_per_second = sound_output.samples_per_second;
+    sound_buffer.sample_count = bytes_to_write / sound_output.bytes_per_sample;
+    sound_buffer.samples = samples;
+
+    game_update_and_render(
+      sound_buffer,
+      offscreen_buffer,
+      x_offset,
+      y_offset
+    );
+
+    if (sound_is_valid)
+    {
       win32_fill_sound_buffer(
           &sound_output,
           byte_to_lock,

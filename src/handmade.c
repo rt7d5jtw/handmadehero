@@ -17,39 +17,6 @@ global read_only s32 MAX_HEIGHT = 2160;
 // 4 bytes for 32-bit color depth (e.g. BGRA)
 global read_only u32 BYTES_PER_PIXEL = 4;
 
-/* Debug Print Macro for win32 and linux
- * Usage:
- *   DEBUG_LOG("Cursor positions - Play: %lu, Write: %lu", play_cursor, write_cursor);
- *   DEBUG_LOG("Sine wave phase: %f", sound_output.t_sine);
-*/
-#ifdef DEBUG
-#  if defined(_WIN32)
-   __declspec(dllimport) void __stdcall OutputDebugStringA(const char* lpOutputString);
-    // Windows Debug Logger
-#    define DEBUG_LOG(format, ...)                                        \
-      do                                                                  \
-      {                                                                   \
-        char dbg_msg[512] = {0};                                          \
-        snprintf(dbg_msg, sizeof(dbg_msg), format "\n", ##__VA_ARGS__);   \
-        OutputDebugStringA(dbg_msg);                                      \
-      } while (0)
-#  elif defined(__linux__)
-    // Linux Debug Logger
-#    define DEBUG_LOG(format, ...)                                        \
-      do                                                                  \
-      {                                                                   \
-        fprintf(stderr, "[DEBUG] " format "\n", ##__VA_ARGS__);           \
-      } while (0)
-#  else
-    // Unknown OS Fallback
-#    define DEBUG_LOG(format, ...)
-#  endif
-#else
-  // If we are in Release mode, DEBUG_LOG does nothing.
-  // The compiler will should erase these lines from the final build.
-#  define DEBUG_LOG(format, ...)
-#endif
-
 // Xorshift RNGs
 // https://excamera.com/sphinx/article-xorshift.html
 u32 xorshift32(void)
@@ -65,36 +32,60 @@ u32 xorshift32(void)
   return x;
 }
 
+// NOTE: used to be `output_sound(SoundOutputBuffer sound_buffer)`
+internal void fill_audio_buffer(AudioBuffer* audio_buffer)
+{
+  local f32 sine_phase = 0.0f;
+
+  s16* sample_cursor = audio_buffer->samples;
+  s32  wave_period   = audio_buffer->samples_per_second / audio_buffer->tone_hz;
+
+  for (s32 sample_index = 0; sample_index < audio_buffer->sample_count; sample_index += 1)
+  {
+    f32 sine_value   = sinf(sine_phase);
+    s16 sample_value = cast(s16)(sine_value * audio_buffer->tone_volume);
+
+    *sample_cursor++ = sample_value; // left channel
+    *sample_cursor++ = sample_value; // right channel
+
+    sine_phase += TAU_F32 / (f32)wave_period;
+    if (sine_phase > TAU_F32)
+    {
+      sine_phase -= TAU_F32;
+    }
+  }
+}
+
 /*
  * NOTE: Windows GDI uses BGRA (blue, green, red, alpha) format
  */
-void draw_random_gradient(
-    u32 bytes_per_pixel,
-    u32* bitmap_memory,
-    u32 bitmap_width,
-    u32 bitmap_height,
+internal void draw_random_gradient(
+    OffscreenBuffer* offscreen_buffer,
     u32 x_offset,
     u32 y_offset
 )
 {
-  assert(bitmap_memory != NULL && "GDI Bitmap memory buffer must not be null!");
+  assert(offscreen_buffer->memory != NULL && "GDI Bitmap memory buffer must not be null!");
   assert(
-      bitmap_width > 0 && bitmap_height > 0 &&
+      offscreen_buffer->width > 0 && offscreen_buffer->height > 0 &&
       "GDI Bitmap dimensions must be greater than zero!"
   );
 
   /* stride or pitch: the total number of bytes in one horizontal line of the bitmap */
-  u32 pitch = bitmap_width * bytes_per_pixel;
+  u32 pitch = offscreen_buffer->width * offscreen_buffer->bytes_per_pixel;
   /* pointer to the first byte of the current row being processed */
-  u8* row = (u8*)bitmap_memory;
+  u8* row = (u8*)offscreen_buffer->memory;
+
+  u32 height = offscreen_buffer->height;
+  u32 width  = offscreen_buffer->width;
 
   /* Iterate through each row (y-coordinate) */
-  for (u32 y = 0; y < bitmap_height; ++y)
+  for (u32 y = 0; y < height; ++y)
   {
     // first byte of the current pixel in the row
     u32* pixel = (u32*)row;
     /* Iterate through each pixel in the current row (x-coordinate) */
-    for (u32 x = 0; x < bitmap_width; ++x)
+    for (u32 x = 0; x < width; ++x)
     {
       u8 blue  = (u8)(x + x_offset);
       u8 green = (u8)(y + y_offset);
@@ -115,7 +106,7 @@ void draw_random_gradient(
   }
 }
 
-void draw_snow(u32* bitmap_memory, u32 bitmap_width, u32 bitmap_height)
+internal void draw_snow(u32* bitmap_memory, u32 bitmap_width, u32 bitmap_height)
 {
   assert(bitmap_memory != NULL && "GDI Bitmap memory buffer must not be null!");
   assert(
@@ -146,6 +137,21 @@ void draw_snow(u32* bitmap_memory, u32 bitmap_width, u32 bitmap_height)
     }
     row += pitch;
   }
+}
+
+internal void game_update_and_render(
+    AudioBuffer* audio_buffer,
+    OffscreenBuffer* offscreen_buffer,
+    u32 y_offset,
+    u32 x_offset
+)
+{
+  fill_audio_buffer(audio_buffer);
+  draw_random_gradient(
+    offscreen_buffer,
+    x_offset,
+    y_offset
+  );
 }
 
 #if defined(_WIN32)
