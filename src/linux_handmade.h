@@ -8,16 +8,41 @@
 #  define WHITE      0xffffff
 #  define BLACK      0x000000
 
+typedef struct LinuxWindow LinuxWindow;
+struct LinuxWindow
+{
+  Display* x11_display;
+  Window x11_window;
+  int x11_screen;
+};
+
+typedef struct X11Backbuffer X11Backbuffer;
+struct X11Backbuffer
+{
+  GC graphics_context;
+  XImage* ximage;
+  char* data;
+  usize size;
+};
+
 typedef struct LinuxSoundOutput LinuxSoundOutput;
 struct LinuxSoundOutput
 {
-  int samples_per_second;
-  int bytes_per_sample;
-  u32 running_sample_index;
-  int tone_hz;
-  int tone_volume;
-  int wave_period;
+  snd_pcm_t* pcm_handle;
+  u32 samples_per_second;
+  u32 bytes_per_sample;
+  u32 audio_channels;
+  u64 running_sample_index;
+
+  // synth state
+  u32 tone_hz;
+  s16 tone_volume;
+  u32 wave_period;
   f32 t_sine;
+
+  // playback buffer
+  s16* samples;
+  usize sample_capacity;
 };
 
 /* GUI MODE:
@@ -33,3 +58,7 @@ void x11_render_buffer(Display* display, Window window, GC gc, XImage* image);
 void x11_draw_pixel(XImage* image, int x, int y, u64 color);
 GC create_x11_graphics_context(Display* display, Window window, int reverse_video);
 void create_wav_sine_file(void);
+LinuxWindow linux_window_create(void);
+b32 x11_init_backbuffer(LinuxWindow* linux_window, Arena* arena, X11Backbuffer* backbuffer);
+b32 alsa_init_playback(snd_pcm_t** out_pcm, u32 channels, u32 rate);
+b32 linux_sound_init(LinuxSoundOutput* sound_output, Arena* arena);

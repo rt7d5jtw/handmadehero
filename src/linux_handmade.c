@@ -246,6 +246,177 @@ void create_wav_sine_file(void)
   os_file_close(file);
 }
 
+LinuxWindow linux_window_create(void)
+{
+  LinuxWindow linux_window = {0};
+
+  XSetWindowAttributes window_attributes = {0};
+  window_attributes.background_pixmap = None; // prevent flickering by suppressing erase
+  window_attributes.background_pixel  = DARK_GREEN;
+  window_attributes.event_mask =
+      KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask |
+      ButtonReleaseMask | Button1MotionMask |
+      StructureNotifyMask; // StructureNotifyMask for resizing
+
+  // Open connection with the X server
+  linux_window.x11_display = XOpenDisplay(0);
+  if (linux_window.x11_display == NULL)
+  {
+    return linux_window;
+  }
+
+  Window root_window = XDefaultRootWindow(linux_window.x11_display);
+
+  u32 attribute_value_mask =
+      CWBackPixmap | CWEventMask |
+      CWBitGravity; // tell x11 to look at background_pixmap and event_mask
+
+  u32 x                 = 0;
+  u32 y                 = 0;
+  u32 width             = WINDOW_WIDTH;
+  u32 height            = WINDOW_HEIGHT;
+  u32 border_width      = 0;
+  u32 window_depth      = CopyFromParent;
+  u32 window_class      = CopyFromParent;
+  Visual* window_visual = CopyFromParent;
+
+  linux_window.x11_window = XCreateWindow(
+      linux_window.x11_display,
+      root_window,
+      x,
+      y,
+      width,
+      height,
+      border_width,
+      window_depth,
+      window_class,
+      window_visual,
+      attribute_value_mask,
+      &window_attributes
+  );
+
+  XMapWindow(linux_window.x11_display, linux_window.x11_window);
+
+  int screen = DefaultScreen(linux_window.x11_display);
+  linux_window.x11_screen = screen;
+
+  return linux_window;
+}
+
+b32 x11_init_backbuffer(LinuxWindow* linux_window, Arena* arena, X11Backbuffer* backbuffer)
+{
+    if (!linux_window || !arena || !backbuffer)
+    {
+      return false;
+    }
+
+    assert(MAX_WIDTH  >= WINDOW_WIDTH);
+    assert(MAX_HEIGHT >= WINDOW_HEIGHT);
+
+    Display* display = linux_window->x11_display;
+    int      screen  = DefaultScreen(display);
+    int      depth   = DefaultDepth(display, screen);
+    assert(depth == 24 || depth == 32);   // bits_per_pixel below assumes 4 bytes
+
+    backbuffer->graphics_context = XCreateGC(display, linux_window->x11_window, 0, NULL);
+    if (!backbuffer->graphics_context)
+    {
+        fprintf(stderr, "x11_init_backbuffer: XCreateGC failed\n");
+        return false;
+    }
+
+    backbuffer->size = (usize)WINDOW_WIDTH * WINDOW_HEIGHT * BYTES_PER_PIXEL;
+    backbuffer->data = PushArray(arena, char, backbuffer->size);
+    if (!backbuffer->data)
+    {
+        fprintf(stderr, "x11_init_backbuffer: backbuffer allocation failed!\n");
+        XFreeGC(display, backbuffer->graphics_context);
+        backbuffer->graphics_context = NULL;
+        return false;
+    }
+
+    backbuffer->ximage = XCreateImage(
+        display,
+        DefaultVisual(display, screen),
+        depth,
+        ZPixmap,
+        0,
+        backbuffer->data,
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
+        32,
+        WINDOW_WIDTH * BYTES_PER_PIXEL
+    );
+    if (!backbuffer->ximage)
+    {
+        fprintf(stderr, "x11_init_backbuffer: XCreateImage failed\n");
+        XFreeGC(display, backbuffer->graphics_context);
+        backbuffer->graphics_context = NULL;
+        backbuffer->data = NULL;
+        return false;
+    }
+
+  x11_clear_buffer(backbuffer->ximage, BLACK);
+  return true;
+}
+
+b32 alsa_init_playback(snd_pcm_t** out_pcm, u32 channels, u32 rate)
+{
+  snd_pcm_t* pcm_handle = NULL;
+  int err = snd_pcm_open(&pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
+  if (err < 0)
+  {
+    fprintf(stderr, "[ALSA] Unable to open PCM device: %s\n", snd_strerror(err));
+    return false;
+  }
+
+  if (!alsa_set_hardware_parameters(pcm_handle, channels, rate))
+  {
+    snd_pcm_close(pcm_handle);
+    return false;
+  }
+
+  if ((err = snd_pcm_nonblock(pcm_handle, 1)) < 0)
+  {
+    fprintf(stderr, "[ALSA] snd_pcm_nonblock: %s\n", snd_strerror(err));
+    snd_pcm_close(pcm_handle);
+    return false;
+  }
+
+  if ((err = snd_pcm_prepare(pcm_handle)) < 0)
+  {
+    fprintf(stderr, "[ALSA] snd_pcm_prepare: %s\n", snd_strerror(err));
+    snd_pcm_close(pcm_handle);
+    return false;
+  }
+
+  *out_pcm = pcm_handle;
+  return true;
+}
+
+b32 linux_sound_init(LinuxSoundOutput* sound_output, Arena* arena)
+{
+  *sound_output = (LinuxSoundOutput)
+  {
+    .samples_per_second   = 48000,
+    .bytes_per_sample     = sizeof(s16) * 2,
+    .audio_channels       = 2,
+    .tone_hz              = 256,
+    .tone_volume          = 3000,
+  };
+
+  sound_output->wave_period     = sound_output->samples_per_second / sound_output->tone_hz;
+  sound_output->sample_capacity = (usize)sound_output->samples_per_second * sound_output->audio_channels;
+  sound_output->samples         = PushArray(arena, s16, sound_output->sample_capacity);
+  if (!sound_output->samples)
+  {
+    return false;
+  }
+
+  b32 result = alsa_init_playback(&sound_output->pcm_handle, sound_output->audio_channels, sound_output->samples_per_second);
+  return result;
+}
+
 int main(void)
 {
 
@@ -253,115 +424,15 @@ int main(void)
   create_wav_sine_file();
   // END WAVE TEST
 
-  u32 x                = 0;
-  u32 y                = 0;
-  u32 width            = WINDOW_WIDTH;
-  u32 height           = WINDOW_HEIGHT;
-  u32 borderWidth      = 0;
-  u32 windowDepth      = CopyFromParent;
-  u32 windowClass      = CopyFromParent;
-  Visual* windowVisual = CopyFromParent;
+  LinuxWindow linux_window = linux_window_create();
 
-  u32 attributeValueMask =
-      CWBackPixmap | CWEventMask |
-      CWBitGravity; // tell x11 to look at background_pixmap and event_mask
-
-  XSetWindowAttributes windowAttributes = {0};
-
-  windowAttributes.background_pixmap = None; // prevent flickering by suppressing erase
-  windowAttributes.background_pixel  = DARK_GREEN;
-  windowAttributes.event_mask =
-      KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask |
-      ButtonReleaseMask | Button1MotionMask |
-      StructureNotifyMask; // StructureNotifyMask for resizing
-
-  // XOpenDisplay https://linux.die.net/man/3/xopendisplay
-  // Open connection with the X server
-  Display* mainDisplay = XOpenDisplay(0);
-
-  // XDefaultRootWindow
-  // https://tronche.com/gui/x/xlib/display/display-macros.html#DefaultRootWindow
-  Window rootWindow = XDefaultRootWindow(mainDisplay);
-
-  // XCreateSimpleWindow
-  // https://tronche.com/gui/x/xlib/window/XCreateWindow.html XCreateWindow
-  // https://tronche.com/gui/x/xlib/window/XCreateWindow.html
-  Window mainWindow = XCreateWindow(
-      mainDisplay,
-      rootWindow,
-      x,
-      y,
-      width,
-      height,
-      borderWidth,
-      windowDepth,
-      windowClass,
-      windowVisual,
-      attributeValueMask,
-      &windowAttributes
-  );
-
-  // XMapWindow https://tronche.com/gui/x/xlib/window/XMapWindow.html
-  XMapWindow(mainDisplay, mainWindow);
-  // XFlush https://tronche.com/gui/x/xlib/event-handling/XFlush.html
-  // XFlush(mainDisplay);
-
-  // https://tronche.com/gui/x/xlib/GC/XCreateGC.html
-  // Create a simple graphics context
-  GC gc = XCreateGC(mainDisplay, mainWindow, 0, NULL);
-
-  // XSetForeground(mainDisplay, gc, BlackPixel(mainDisplay, screen));
-  int screen = DefaultScreen(mainDisplay);
-
-  usize max_buffer_size = cast(usize)MAX_WIDTH * MAX_HEIGHT * BYTES_PER_PIXEL;
+  X11Backbuffer x11_backbuffer = {0};
   Arena arena = {0};
-  char* x11_backbuffer = PushArray(&arena, char, max_buffer_size);
-
-  if (x11_backbuffer == 0)
+  b32 backbuffer_initialized = x11_init_backbuffer(&linux_window, &arena, &x11_backbuffer);
+  if (!backbuffer_initialized)
   {
-    fprintf(
-        stderr, "Fatal Error: Failed to allocate initial backbuffer for X11.\n"
-    );
-    XFreeGC(mainDisplay, gc);
-    XDestroyWindow(mainDisplay, mainWindow);
-    XCloseDisplay(mainDisplay);
-    return 1;
+    exit(1);
   }
-
-  current_buffer_size = max_buffer_size;
-
-  XImage* image = XCreateImage(
-      mainDisplay,
-      DefaultVisual(mainDisplay, screen),
-      DefaultDepth(mainDisplay, screen),
-      ZPixmap,
-      0,
-      x11_backbuffer,
-      WINDOW_WIDTH,
-      WINDOW_HEIGHT,
-      32,
-      0
-  );
-
-  // https://tronche.com/gui/x/xlib/event-handling/XSelectInput.html
-  // https://tronche.com/gui/x/xlib/events/mask.html
-  // XSelectInput(
-  //    mainDisplay,
-  //    mainWindow,
-  //    KeyPressMask | KeyReleaseMask | ExposureMask | ButtonPressMask |
-  //        ButtonReleaseMask | Button1MotionMask
-  //);
-
-  // https://gitlab.com/UltimaN3rd/croaking-kero-programming-tutorials/blob/master/opening_a_window_on_linux_with_xlib/opening_a_window_with_xlib.c
-  // GC gc = create_x11_graphics_context(mainDisplay, mainWindow, 0);
-  //  https://tronche.com/gui/x/xlib/event-handling/XSync.html
-  //  Flush the output buffer and wait until all request have been received and
-  //  processed by the X server
-  // XSync(mainDisplay, False);
-  // XFlush(mainDisplay);
-
-  // image->data = malloc(image->bytes_per_line * image->height);
-  x11_clear_buffer(image, BLACK);
 
   u64 last_cycle_count = __rdtsc();
   // Linux QPC / QPF
@@ -371,55 +442,27 @@ int main(void)
   u64 x_offset = 0;
   u64 y_offset = 0;
 
-  LinuxSoundOutput sound_output     = {0};
-  sound_output.samples_per_second   = 48000;
-  sound_output.bytes_per_sample     = sizeof(s16) * 2;
-  sound_output.running_sample_index = 0;
-  sound_output.tone_hz              = 256;
-  sound_output.tone_volume          = 3000;
-  sound_output.wave_period          = sound_output.samples_per_second / sound_output.tone_hz;
-  sound_output.t_sine               = 0.0f;
 
-  s16 samples[48000 * 2] = {0};
-  u32 audio_channels     = 2;
-
-  // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga8340c7dc0ac37f37afe5e7c21d6c528b
-  snd_pcm_t* pcm_handle = NULL;
-  int alsa_open         = snd_pcm_open(&pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
-
-  if (alsa_open < 0)
+  LinuxSoundOutput sound_output = {0};
+  b32 audio_initialized = linux_sound_init(&sound_output, &arena);
+  if (!audio_initialized)
   {
-    fprintf(stderr, "[ALSA] Unable to open PCM device: %s\n", snd_strerror(alsa_open));
-  }
-  else
-  {
-    // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga1ca0dc120a484965e26cabf966502330
-    if (!alsa_set_hardware_parameters(pcm_handle, audio_channels, sound_output.samples_per_second))
-    {
-      snd_pcm_close(pcm_handle);
-      pcm_handle = NULL;
-    }
-    else
-    {
-      // set alsa to non-blocking mode
-      // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga6bd90de1d1527b5804090dcce51079ad
-      snd_pcm_nonblock(pcm_handle, 1);
-    }
+    exit(1);
   }
 
   OffscreenBuffer offscreen_buffer = {0};
-  offscreen_buffer.width           = image->width;
-  offscreen_buffer.height          = image->height;
+  offscreen_buffer.width           = x11_backbuffer.ximage->width;
+  offscreen_buffer.height          = x11_backbuffer.ximage->height;
   offscreen_buffer.bytes_per_pixel = BYTES_PER_PIXEL;
-  offscreen_buffer.memory          = image->data;
+  offscreen_buffer.memory          = x11_backbuffer.ximage->data;
 
   // https://tronche.com/gui/x/xlib/event-handling/XPending.html
   while (running)
   {
     // poll (don't wait for all events) (similar to PeekMessageW)
-    while (XPending(mainDisplay) > 0)
+    while (XPending(linux_window.x11_display) > 0)
     {
-      XNextEvent(mainDisplay, &generalEvent);
+      XNextEvent(linux_window.x11_display, &generalEvent);
 
       if (generalEvent.type == KeyPress)
       {
@@ -436,7 +479,7 @@ int main(void)
           int new_width  = generalEvent.xconfigure.width;
           int new_height = generalEvent.xconfigure.height;
 
-          if (new_width != image->width || new_height != image->height)
+          if (new_width != x11_backbuffer.ximage->width || new_height != x11_backbuffer.ximage->height)
           {
             DEBUG_LOG("[DEBUG] Resizing buffer to %dx%d\n", new_width, new_height);
 
@@ -448,16 +491,16 @@ int main(void)
             offscreen_buffer.height = new_height;
 
             // Prevents XDestroyImage from deallocating the backbuffer
-            image->data = NULL;
-            XDestroyImage(image);
+            x11_backbuffer.ximage->data = NULL;
+            XDestroyImage(x11_backbuffer.ximage);
 
-            image = XCreateImage(
-                mainDisplay,
-                DefaultVisual(mainDisplay, screen),
-                DefaultDepth(mainDisplay, screen),
+            x11_backbuffer.ximage = XCreateImage(
+                linux_window.x11_display,
+                DefaultVisual(linux_window.x11_display, linux_window.x11_screen),
+                DefaultDepth (linux_window.x11_display, linux_window.x11_screen),
                 ZPixmap,
                 0,
-                (char*)x11_backbuffer, // data pointer is null initially
+                x11_backbuffer.data, // data pointer is null initially
                 new_width,
                 new_height,
                 32,
@@ -466,7 +509,7 @@ int main(void)
 
             if (current_gui_mode == MODE_DRAWING)
             {
-              x11_clear_buffer(image, WHITE);
+              x11_clear_buffer(x11_backbuffer.ximage, WHITE);
             }
             else if (current_gui_mode == MODE_GRADIENT_ANIMATION)
             {
@@ -478,7 +521,7 @@ int main(void)
         // https://tronche.com/gui/x/xlib/events/exposure/expose.html
         case Expose: {
           printf("X11 Expose Event: %d\n", generalEvent.xexpose.type);
-          x11_render_buffer(mainDisplay, mainWindow, gc, image);
+          x11_render_buffer(linux_window.x11_display, linux_window.x11_window, x11_backbuffer.graphics_context, x11_backbuffer.ximage);
           // draw_to_buffer(y_color, x_color, image, gc, mainWindow,
           // mainDisplay);
           //  if (generalEvent.xexpose.count) break;
@@ -494,8 +537,8 @@ int main(void)
           {
             int x_m = generalEvent.xmotion.x;
             int y_m = generalEvent.xmotion.y;
-            x11_draw_pixel(image, x_m, y_m, BLACK);
-            x11_render_buffer(mainDisplay, mainWindow, gc, image);
+            x11_draw_pixel(x11_backbuffer.ximage, x_m, y_m, BLACK);
+            x11_render_buffer(linux_window.x11_display, linux_window.x11_window, x11_backbuffer.graphics_context, x11_backbuffer.ximage);
           }
 
           // int symbol = XLookupKeysym(&generalEvent.xkey, 0);
@@ -518,8 +561,8 @@ int main(void)
           {
             int symbol = XLookupKeysym(&generalEvent.xkey, 0);
             // Mouse position
-            int x = generalEvent.xkey.x;
-            int y = generalEvent.xkey.y;
+            //int x = generalEvent.xkey.x;
+            //int y = generalEvent.xkey.y;
 
 #  ifdef DEBUG
             printf(
@@ -530,8 +573,7 @@ int main(void)
             );
 #  endif
 
-            x11_draw_pixel(image, x, y, BLACK);
-            x11_render_buffer(mainDisplay, mainWindow, gc, image);
+            x11_render_buffer(linux_window.x11_display, linux_window.x11_window, x11_backbuffer.graphics_context, x11_backbuffer.ximage);
           }
           break;
         }
@@ -571,22 +613,22 @@ int main(void)
             case XK_d: {
               // Toggle DRAWING gui mode
               current_gui_mode = MODE_DRAWING;
-              x11_clear_buffer(image, WHITE);
-              x11_render_buffer(mainDisplay, mainWindow, gc, image);
+              x11_clear_buffer(x11_backbuffer.ximage, WHITE);
+              x11_render_buffer(linux_window.x11_display, linux_window.x11_window, x11_backbuffer.graphics_context, x11_backbuffer.ximage);
               printf("[DEBUG] Mode set to DRAWING: White canvas setup.\n");
             }
             break;
             case XK_r: {
               if (current_gui_mode == MODE_DRAWING)
               {
-                x11_clear_buffer(image, WHITE);
+                x11_clear_buffer(x11_backbuffer.ximage, WHITE);
               }
               else
               {
                 x_offset = 0;
                 y_offset = 0;
               }
-              x11_render_buffer(mainDisplay, mainWindow, gc, image);
+              x11_render_buffer(linux_window.x11_display, linux_window.x11_window, x11_backbuffer.graphics_context, x11_backbuffer.ximage);
             }
             break;
             case XK_a: {
@@ -611,16 +653,16 @@ int main(void)
     // ---------------------------------------------------------
 
     // https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html#ga8bb836bd0c414b59789d51a5f5379c08
-    if (pcm_handle)
+    if (sound_output.pcm_handle)
     {
-      snd_pcm_sframes_t frames_ready = snd_pcm_avail_update(pcm_handle);
+      snd_pcm_sframes_t frames_ready = snd_pcm_avail_update(sound_output.pcm_handle);
 
       if (frames_ready < 0)
       {
         if (frames_ready == -EPIPE)
         {
           fprintf(stderr, "[ALSA] Buffer undderrun (xrun) occurred. Recovering...\n");
-          snd_pcm_prepare(pcm_handle);
+          snd_pcm_prepare(sound_output.pcm_handle);
         }
         else
         {
@@ -640,7 +682,7 @@ int main(void)
         audio_buffer.sample_count       = cast(s32)frames_ready;
         audio_buffer.tone_hz            = sound_output.tone_hz;
         audio_buffer.tone_volume        = cast(s16)sound_output.tone_volume;
-        audio_buffer.samples            = samples;
+        audio_buffer.samples            = sound_output.samples;
 
         // write audio frames
         //game_update_and_render(
@@ -652,11 +694,11 @@ int main(void)
 
         fill_audio_buffer(&audio_buffer);
 
-        snd_pcm_sframes_t frames_written = snd_pcm_writei(pcm_handle, samples, frames_ready);
+        snd_pcm_sframes_t frames_written = snd_pcm_writei(sound_output.pcm_handle, sound_output.samples, frames_ready);
         if (frames_written == -EPIPE)
         {
           fprintf(stderr, "[ALSA] Buffer underrun during write. Recovering...\n");
-          snd_pcm_prepare(pcm_handle);
+          snd_pcm_prepare(sound_output.pcm_handle);
         }
       }
     }
@@ -669,7 +711,7 @@ int main(void)
       // render
       draw_random_gradient(&offscreen_buffer, x_offset, y_offset);
       //draw_snow((u32*)image->data, image->width, image->height);
-      x11_render_buffer(mainDisplay, mainWindow, gc, image);
+      x11_render_buffer(linux_window.x11_display, linux_window.x11_window, x11_backbuffer.graphics_context, x11_backbuffer.ximage);
     }
 
     // Get ending time
@@ -691,29 +733,27 @@ int main(void)
 
   // Wait for the X Server to process all buffered requests and clear the queue
   // before cleanup
-  XSync(mainDisplay, False);
+  XSync(linux_window.x11_display, False);
 
-  if (image && image->data)
+  if (x11_backbuffer.ximage && x11_backbuffer.ximage->data)
   {
     // Prevent XDestroyImage from deallocating the backbuffer
-    image->data = NULL;
+    x11_backbuffer.ximage->data = NULL;
   }
 
   // Cleanup
 
-  if (pcm_handle)
+  if (sound_output.pcm_handle)
   {
-    snd_pcm_drain(pcm_handle);
-    snd_pcm_close(pcm_handle);
-    pcm_handle = NULL;
+    snd_pcm_drain(sound_output.pcm_handle);
+    snd_pcm_close(sound_output.pcm_handle);
+    sound_output.pcm_handle = NULL;
   }
 
-  XDestroyImage(image);
-  XFreeGC(mainDisplay, gc);
-  XDestroyWindow(mainDisplay, mainWindow);
-
-  // https://tronche.com/gui/x/xlib/display/XCloseDisplay.html
-  XCloseDisplay(mainDisplay);
+  XDestroyImage(x11_backbuffer.ximage);
+  XFreeGC(linux_window.x11_display, x11_backbuffer.graphics_context);
+  XDestroyWindow(linux_window.x11_display, linux_window.x11_window);
+  XCloseDisplay(linux_window.x11_display);
 
   return 0;
 }
