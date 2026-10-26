@@ -1,49 +1,80 @@
-/* vi: foldmethod=marker
- */
-
 #include "os.h"
 
 #if defined(_WIN32)
 
-// Memory functions -- win32 {{{
+/* Memory operations */
 
-void* os_memory_reserve(usize allocation_size)
+void* os_vm_reserve(u64 reserve_size)
 {
-  // https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc2
-  void* memory = VirtualAlloc(0, allocation_size, MEM_RESERVE, PAGE_READWRITE);
-  return memory;
+  LPVOID desired_base_address = NULL;
+  SIZE_T region_size_in_bytes = (SIZE_T)reserve_size;
+  DWORD  allocation_type      = MEM_RESERVE;
+  DWORD  access_protection    = PAGE_NOACCESS;
+
+  return VirtualAlloc(
+    desired_base_address,
+    region_size_in_bytes,
+    allocation_type,
+    access_protection
+  );
 }
 
-/* returns true based on if memory was committed */
-internal b32 os_memory_commit(void* memptr, usize allocation_size)
+b32 os_vm_commit(void* start_address, u64 commit_size)
 {
-  // https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfree#return-value
-  // unlike in unix systems, the return value is nonzero for success and zero for failure
-  // so we return true on success and false on failure.
-  b32 result = (VirtualAlloc(memptr, allocation_size, MEM_COMMIT, PAGE_READWRITE) != 0);
-  return result;
+  LPVOID desired_base_address = (LPVOID)start_address;
+  SIZE_T region_size_in_bytes = (SIZE_T)commit_size;
+  DWORD  allocation_type      = MEM_COMMIT;
+  DWORD  access_protection    = PAGE_READWRITE;
+
+  return VirtualAlloc(
+    desired_base_address,
+    region_size_in_bytes,
+    allocation_type,
+    access_protection
+  ) != NULL;
 }
 
-/* returns 0 on failure, on success returns nonzero value.
- * NOTE: usize is not used for win32 implementation, but is used for other
- *      operating systems, so it is still provided for the sake of completeness.
- */
-internal b32 os_memory_decommit(void* memptr, usize allocation_size)
+b32 os_vm_decommit(void* start_address, u64 decommit_size)
 {
-  // https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfree
-  return (VirtualFree(memptr, allocation_size, MEM_DECOMMIT) != 0);
+  LPVOID base_address_of_region = (LPVOID)start_address;
+  SIZE_T region_size_in_bytes   = (SIZE_T)decommit_size;
+  DWORD  free_operation_type    = MEM_DECOMMIT;
+
+  return VirtualFree(
+    base_address_of_region,
+    region_size_in_bytes,
+    free_operation_type
+  ) != 0;
 }
 
-/* returns 0 on failure, on success returns nonzero value. */
-internal b32 os_memory_release(void* memptr, usize allocation_size)
+b32 os_vm_release(void* start_address, u64 release_size)
 {
-  // https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfree
-  return (VirtualFree(memptr, allocation_size, MEM_RELEASE) != 0);
+  (void)release_size;
+  LPVOID base_address_of_region = (LPVOID)start_address;
+  SIZE_T size_for_release       = 0;
+  DWORD  free_operation_type    = MEM_RELEASE;
+
+  return VirtualFree(
+    base_address_of_region,
+    size_for_release,
+    free_operation_type
+  ) != 0;
 }
 
-// }}}
+u64 os_page_size(void)
+{
+  static u64 cached_page_size = 0;
+  if (!cached_page_size)
+  {
+    SYSTEM_INFO system_info;
+    GetSystemInfo(&system_info);
+    cached_page_size = (u64)system_info.dwPageSize;
+  }
 
-// File Operations -- win32 {{{
+  return cached_page_size;
+}
+
+/* File Operations */
 
 global u64 global_win32_performance_counter_frequency = 0;
 
@@ -168,12 +199,13 @@ void os_file_close(OS_Handle file)
   }
 }
 
-void os_file_seek(OS_Handle file, u32 offset)
+void os_file_seek(OS_Handle file, u64 offset)
 {
   if (file.handle != cast(void*)-1)
   {
-    // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfilepointer
-    SetFilePointer(cast(HANDLE)file.handle, cast(LONG)offset, NULL, FILE_BEGIN);
+    LARGE_INTEGER distance;
+    distance.QuadPart = (LONGLONG)offset;
+    SetFilePointerEx(cast(HANDLE)file.handle, distance, NULL, FILE_BEGIN);
   }
 }
 
@@ -197,10 +229,16 @@ void os_file_seek(OS_Handle file, u32 offset)
  */
 u64 os_get_time(void)
 {
+  if (global_win32_performance_counter_frequency == 0)
+  {
+    LARGE_INTEGER freq;
+    QueryPerformanceFrequency(&freq);
+    global_win32_performance_counter_frequency = (u64)freq.QuadPart;
+  }
+
   LARGE_INTEGER counter;
   QueryPerformanceCounter(&counter);
-  u64 hardware_ticks = (u64)counter.QuadPart;
-  return hardware_ticks;
+  return (u64)counter.QuadPart;
 }
 
 f32 os_get_time_elapsed_in_microseconds(u64 start_time_in_ticks, u64 end_time_in_ticks)
@@ -212,81 +250,84 @@ f32 os_get_time_elapsed_in_microseconds(u64 start_time_in_ticks, u64 end_time_in
   return elapsed_microseconds;
 }
 
-b32 os_file_size(char * filepath, u64* filesize)
+b32 os_file_size(const char* filepath, u64* filesize)
 {
-  b32 result = 0;
-
-  HANDLE filehandle = CreateFileA(filepath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-  if (filehandle == INVALID_HANDLE_VALUE)
+  WIN32_FILE_ATTRIBUTE_DATA fileinfo;
+  if (GetFileAttributesExA(filepath, GetFileExInfoStandard, &fileinfo))
   {
-    return 0;
+    *filesize = ((u64)fileinfo.nFileSizeHigh << 32) | fileinfo.nFileSizeLow;
+    return 1;
   }
 
-  LARGE_INTEGER win32_filesize;
-  if (GetFileSizeEx(filehandle, &win32_filesize))
-  {
-    *filesize = (u64)win32_filesize.QuadPart;
-    result = 1;
-  }
-
-  CloseHandle(filehandle);
-  return result;
+  return 0;
 }
 
 // }}}
-
 #elif defined(__linux__)
 
-// Memory functions -- Linux {{{
+/* Memory Operations */
 
-internal void* os_memory_reserve(usize allocation_size)
+void* os_vm_reserve(u64 reserve_size)
 {
-  // https://man7.org/linux/man-pages/man2/mmap.2.html
-  void* memory = mmap(0, allocation_size, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-  if (memory == MAP_FAILED)
-  {
-    memory = 0;
-  }
+  void*  hint_address            = NULL;
+  size_t region_length           = (size_t)reserve_size;
+  int    memory_protection       = PROT_NONE;
+  int    mapping_flags           = MAP_PRIVATE | MAP_ANONYMOUS;
+  int    backing_file_descriptor = -1;
+  off_t  file_offset             = 0;
 
+  void* memory = mmap(
+    hint_address,
+    region_length,
+    memory_protection,
+    mapping_flags,
+    backing_file_descriptor,
+    file_offset
+  );
+
+  if (memory == MAP_FAILED)
+    return NULL;
   return memory;
 }
 
-/* returns true based on if memory was committed
- * NOTE:
- *     VirtualAlloc returns NULL on failure and mprotect returns -1 on error,
- *     but on success it returns 0 (opposite for VirtualProtect since NULL == 0).
- */
-internal b32 os_memory_commit(void* memptr, usize allocation_size)
+b32 os_vm_commit(void* start_address, u64 commit_size)
 {
-  // https://man7.org/linux/man-pages/man2/mprotect.2.html
-  // NOTE: https://man7.org/linux/man-pages/man2/mprotect.2.html#ERRORS
-  b32 result = (mprotect(memptr, allocation_size, PROT_READ | PROT_WRITE) != -1);
-  return result;
+  size_t region_length     = (size_t)commit_size;
+  int    memory_protection = PROT_READ | PROT_WRITE;
+
+  return mprotect(start_address, region_length, memory_protection) == 0;
 }
 
-/* returns -1 on failure, returns 0 on success */
-internal b32 os_memory_decommit(void* memptr, usize allocation_size)
+b32 os_vm_decommit(void* start_address, u64 decommit_size)
 {
-  // https://man7.org/linux/man-pages/man2/madvise.2.html
-  b32 madv_result = madvise(memptr, allocation_size, MADV_DONTNEED);
-  // https://man7.org/linux/man-pages/man2/mprotect.2.html
-  b32 prot_result = mprotect(memptr, allocation_size, PROT_NONE);
+  size_t region_length     = (size_t)decommit_size;
+  int    advice            = MADV_DONTNEED;
+  int    memory_protection = PROT_NONE;
 
-  return !(madv_result  | prot_result);
+  madvise(start_address, region_length, advice);
+  return mprotect(start_address, region_length, memory_protection) == 0;
 }
 
-/* returns -1 on failure, otherwise returns 0 */
-internal b32 os_memory_release(void* memory_ptr, usize allocation_size)
+b32 os_vm_release(void* start_address, u64 release_size)
 {
-  // https://man7.org/linux/man-pages/man3/munmap.3p.html
-  //u32 result = munmap(memory_ptr, allocation_size);
-  //return result;
-  return (munmap(memory_ptr, allocation_size) != -1);
+  size_t region_length = (size_t)release_size;
+
+  return munmap(start_address, region_length) == 0;
 }
 
-// }}}
+u64 os_page_size(void)
+{
+  static u64 cached_page_size = 0;
+  if (!cached_page_size)
+  {
+    long pagesize = sysconf(_SC_PAGESIZE);
+    cached_page_size = (u64)pagesize;
+  }
 
-// File Operations -- Linux {{{
+  return cached_page_size;
+}
+
+/* File Operations -- Linux */
 
 OS_Handle os_file_open(const char* filepath, u32 flags)
 {
@@ -390,35 +431,25 @@ void os_file_close(OS_Handle file)
   }
 }
 
-void os_file_seek(OS_Handle file, u32 offset)
+void os_file_seek(OS_Handle file, u64 offset)
 {
   if (file.handle != cast(void*)-1)
   {
-    // https://linux.die.net/man/2/lseek
     int file_descriptor = cast(int)cast(ssize)file.handle;
     lseek(file_descriptor, cast(off_t)offset, SEEK_SET);
   }
 }
 
-b32 os_file_size(char * filepath, u64* filesize)
+b32 os_file_size(const char* filepath, u64* filesize)
 {
-  b32 result = 0;
   struct stat fileinfo;
-
-  int fd = open(filepath, O_RDONLY);
-  if (fd == -1)
-  {
-    return 0;
-  }
-
-  if (fstat(fd, &fileinfo) == 0)
+  if (stat(filepath, &fileinfo) == 0)
   {
     *filesize = (u64)fileinfo.st_size;
-    result = 1;
+    return 1;
   }
 
-  close(fd);
-  return result;
+  return 0;
 }
 
 /*
@@ -446,4 +477,6 @@ f32 os_get_time_elapsed_in_microseconds(u64 start_time_in_nanoseconds, u64 end_t
   return elapsed_microseconds;
 }
 // }}}
+#else
+#  warning "Unsupported platform for OS layer!"
 #endif

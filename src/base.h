@@ -1,8 +1,6 @@
 /* vi: foldmethod=marker
  */
 
-#pragma once
-#pragma once
 #ifndef BASE_H
 #  define BASE_H
 

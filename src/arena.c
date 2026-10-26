@@ -1,145 +1,184 @@
-/**
- * Reserve and commit memory from the currenk chunk to satisfy {size}.
- *
- *   1. Check current chunk capacity: calculate the required position `next_chunk_pos` after
- *       alignment and adding {size}
- *
- *   2. Allocate new chunk (if necessary): if we exceed chunk capacity (reserved memory limit for
- *      the current chunk), reverse and commit more memory.
- *
- *   3. Commit more memory (if necessary): make more reversed memory usable (lazy committing)
- *
- *   4. Allocate and Advance: If the memory fits within committed range, return a pointer to the
- *      aligned start of the requested memory block and advance `current->chunk_pos`
- */
-void* arena_push_no_zero(Arena* arena, u64 size)
-{
-  void*  result  = 0;
-  Arena* current = arena->current;
+#include "arena.h"
 
-  // allocate new chunk if necessary
-  if (arena->growing) {
-    // Align forward
-    u64 next_chunk_pos = AlignUpPow2(current->chunk_pos, arena->alignment);
-    // add size to next_chunk_pos
-    next_chunk_pos += size;
-
-    // allocate new chunk if necessary
-    if (next_chunk_pos > current->chunk_cap) {
-      u64 new_reserve_size = MEM_DEFAULT_RESERVE_SIZE;
-      u64 enough_to_fit    = size + MEM_INTERNAL_MIN_SIZE;
-
-      if (new_reserve_size < enough_to_fit) {
-        new_reserve_size = AlignUpPow2(enough_to_fit, KiB(4));
-      }
-
-      void* memory = os_memory_reserve(new_reserve_size);
-      if (os_memory_commit(memory, MEM_INITIAL_COMMIT)) {
-        // AsanPoison(memory, new_reserve_size);
-        // AsanUnpoison(memory, MEM_INTERNAL_MIN_SIZE);
-
-        // The Arena Header is placed at the start of the reserved memory block, this memory block
-        // is then passed on to the caller.
-        Arena* new_chunk            = cast(Arena*) memory;
-        new_chunk->prev             = current; // link new chunk back to the old chunk
-        new_chunk->base_pos         = current->base_pos + current->chunk_cap;
-        new_chunk->chunk_cap        = new_reserve_size;
-        new_chunk->chunk_pos        = MEM_INTERNAL_MIN_SIZE;
-        new_chunk->chunk_commit_pos = MEM_INITIAL_COMMIT;
-        // Update global allocator head pointer to the newly allocated chunk
-        // and make sure the new chunk is used for the allocation
-        current = arena->current = new_chunk;
-      }
-    }
-  }
-
-  {
-    // if there is room in this chunk's reserve ...
-    u64 result_pos     = AlignUpPow2(current->chunk_pos, arena->alignment);
-    u64 next_chunk_pos = result_pos + size;
-    if (next_chunk_pos <= current->chunk_cap) {
-
-      // commit more memory if necessary
-      if (next_chunk_pos > current->chunk_commit_pos) {
-        // forward align
-        u64 next_commit_pos_aligned = AlignUpPow2(next_chunk_pos, MEM_COMMIT_BLOCK_SIZE);
-        // restrict to next commit to chunk capacity (if aligned position overshoots the chunk
-        // capacity, to not commit past the reserved limit)
-        u64 next_commit_pos = Min(next_commit_pos_aligned, current->chunk_cap);
-        // take the difference of commit positions
-        u64 commit_size = next_commit_pos - current->chunk_commit_pos;
-
-        if (os_memory_commit((u8*) current + current->chunk_commit_pos, commit_size)) {
-          arena->chunk_commit_pos = next_commit_pos;
-        }
-      }
-
-      // if there is room in the commit range, return memory & advance pos
-      if (next_chunk_pos <= current->chunk_commit_pos) {
-        // AsanUnpoison((U8*) current + current->chunk_pos, next_chunk_pos - current->chunk_pos);
-        result             = (u8*) current + result_pos;
-        current->chunk_pos = next_chunk_pos;
-      }
-    }
-  }
-
-  return result;
-}
-
-// element is popped from the top of the stack and removed (?)
-// void arena_pop_to(Arena* arena, u64 pos) {
-//  if (pos < arena->base_pos) {
-//    arena->base_pos = pos;
-//
-//    u64 p = arena->base_pos;
-//    u64 p_aligned = AlignUpPow2(p, M_COMMIT_BLOCK_SIZE - 1);
-//  }
-//}
-
-/**
- * wrapper for arena_push_no_zero to zero initialize the memory
- * this function memsets the allocated memory to 0.
- *
- * Set every byte in teh newly allocated block to 0.
- */
 void* arena_push(Arena* arena, u64 size)
 {
-  void* result = arena_push_no_zero(arena, size);
-  MemoryZero(result, size);
-  return result;
-}
+  if (size == 0)
+  {
+    return NULL;
+  }
 
-internal Arena* arena_alloc_(u64 reserve_size, b32 growing)
-{
-  Arena* arena = 0;
-  if (reserve_size >= MEM_INITIAL_COMMIT) {
-    void* memory = os_memory_reserve(reserve_size);
-    if (os_memory_commit(memory, MEM_INITIAL_COMMIT)) {
-      arena                   = (Arena*) memory;
-      arena->current          = arena;
-      arena->prev             = 0;
-      arena->alignment        = sizeof(void*);
-      arena->growing          = cast(b8)growing;
-      arena->base_pos         = 0;
-      arena->chunk_cap        = reserve_size;
-      arena->chunk_pos        = MEM_INTERNAL_MIN_SIZE;
-      arena->chunk_commit_pos = MEM_INITIAL_COMMIT;
+  u64 aligned_size    = ALIGN_POW2(size, ARENA_ALIGNMENT);
+  u64 page_size       = os_page_size();
+  Arena* active_block = arena->next;
+
+  /* ---- 1. Slow Path: Reserve and chain a new block if the active one cannot fit the push ---- */
+  if (active_block == NULL || (ARENA_HEADER_SIZE + active_block->cursor + aligned_size > active_block->reserved))
+  {
+    u64 base_block_size     = arena->block_size ? arena->block_size : ARENA_DEFAULT_BLOCK_SIZE;
+    u64 required_block_size = ARENA_HEADER_SIZE + aligned_size;
+    u64 max_block_size      = arena->max_block ? (arena->max_block + ARENA_HEADER_SIZE) : UINT64_MAX;
+
+    /* Clamp default target to max cap, then ensure it is at least large enough for this allocation */
+    u64 reserve_size = Max(required_block_size, ClampTop(base_block_size, max_block_size));
+    reserve_size     = ALIGN_POW2(reserve_size, page_size);
+
+    u64 commit_size = ALIGN_POW2(required_block_size, page_size);
+
+    Arena* new_block = (Arena*)os_vm_reserve(reserve_size);
+    if (new_block == NULL)
+    {
+      return NULL;
+    }
+
+    if (!os_vm_commit(new_block, commit_size))
+    {
+      os_vm_release(new_block, reserve_size);
+      return NULL;
+    }
+
+    new_block->next       = arena->next;
+    new_block->reserved   = reserve_size;
+    new_block->committed  = commit_size;
+    new_block->cursor     = 0;
+    new_block->block_size = 0;
+    new_block->max_block  = 0;
+
+    arena->next  = new_block;
+    active_block = new_block;
+
+    /* Double target size for subsequent blocks, guarding against 64-bit overflow */
+    u64 next_block_size = (base_block_size <= (UINT64_MAX / 2)) ? (base_block_size * 2) : UINT64_MAX;
+    arena->block_size   = ClampTop(next_block_size, max_block_size);
+  }
+  /* ---- 2. Fast Path: Commit additional pages if the active block needs more physical RAM ---- */
+  else
+  {
+    u64 required_bytes = ARENA_HEADER_SIZE + active_block->cursor + aligned_size;
+    if (required_bytes > active_block->committed)
+    {
+      u64 commit_target = ALIGN_POW2(required_bytes, page_size);
+      u8* commit_start  = (u8*)active_block + active_block->committed;
+      u64 commit_size   = commit_target - active_block->committed;
+
+      if (!os_vm_commit(commit_start, commit_size))
+      {
+        return NULL;
+      }
+
+      active_block->committed = commit_target;
     }
   }
 
-  assert(arena != 0);
-  return arena;
+  /* ---- 3. Sub-allocate from the active block and advance the cursor ---- */
+  void* payload = (u8*)active_block + ARENA_HEADER_SIZE + active_block->cursor;
+  active_block->cursor += aligned_size;
+
+  return payload;
 }
 
-/**
- * Setup function to initialize the arena:
- * reserves memory, commits initial head and initializes the header.
- * NOTE: It is important that this is called BEFORE `arena_push` or `arena_push_no_zero` !
- */
-
-// #define arena_alloc() arena_alloc_(MEM_DEFAULT_RESERVE_SIZE, 1);
-Arena* arena_alloc(void)
+void* arena_push_zero(Arena* arena, u64 size)
 {
-  Arena* result = arena_alloc_(MEM_DEFAULT_RESERVE_SIZE, 1);
-  return result;
+  void* payload = arena_push(arena, size);
+  if (payload != NULL)
+  {
+    MemoryZero(payload, ALIGN_POW2(size, ARENA_ALIGNMENT));
+  }
+
+  return payload;
+}
+
+void* arena_mark(Arena* arena)
+{
+  Arena* active_block = arena->next;
+  if (active_block == NULL)
+  {
+    return NULL;
+  }
+
+  /* Mark is the exact memory address the next push will land on */
+  return (u8*)active_block + ARENA_HEADER_SIZE + active_block->cursor;
+}
+
+void arena_pop(Arena* arena, void* mark)
+{
+  /* State before any pushes; release the entire chain */
+  if (mark == NULL)
+  {
+    Arena* block = arena->next;
+    while (block != NULL)
+    {
+      Arena* older_block = block->next;
+      os_vm_release(block, block->reserved);
+      block = older_block;
+    }
+
+    arena->next = NULL;
+    return;
+  }
+
+  Arena* block = arena->next;
+  u8* mark_ptr = (u8*)mark;
+
+  while (block != NULL)
+  {
+    u8* payload_start = (u8*)block + ARENA_HEADER_SIZE;
+    u8* block_end     = (u8*)block + block->reserved;
+
+    if (mark_ptr >= payload_start && mark_ptr <= block_end)
+    {
+      /* Release all blocks allocated after the target block */
+      while (arena->next != block)
+      {
+        Arena* newer_block = arena->next;
+        arena->next        = newer_block->next;
+        os_vm_release(newer_block, newer_block->reserved);
+      }
+
+      /* Rewind the cursor to the mark's offset within this block */
+      block->cursor = (u64)(mark_ptr - payload_start);
+      return;
+    }
+
+    block = block->next;
+  }
+
+  assert(0 && "Arena pop failed: mark was not found in any active block.");
+}
+
+void arena_reset(Arena* arena)
+{
+  Arena* newest_block = arena->next;
+  if (newest_block == NULL)
+  {
+    return;
+  }
+
+  /* Release every block older than the newest block */
+  Arena* block = newest_block->next;
+  while (block != NULL)
+  {
+    Arena* older_block = block->next;
+    os_vm_release(block, block->reserved);
+    block = older_block;
+  }
+
+  /* The newest block becomes the sole block in the chain with a rewound cursor */
+  newest_block->next   = NULL;
+  newest_block->cursor = 0;
+
+  /* Decommit excess physical RAM down to a single page to prevent memory hoarding */
+  u64 page_size = os_page_size();
+  if (newest_block->committed > page_size)
+  {
+    u8* decommit_start = (u8*)newest_block + page_size;
+    u64 decommit_size  = newest_block->committed - page_size;
+
+    os_vm_decommit(decommit_start, decommit_size);
+    newest_block->committed = page_size;
+  }
+}
+
+void arena_destroy(Arena* arena)
+{
+  arena_pop(arena, NULL);
 }

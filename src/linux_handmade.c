@@ -200,7 +200,7 @@ GC create_x11_graphics_context(
 
 void create_wav_sine_file(void)
 {
-  Arena* wave_arena = arena_alloc();
+  Arena wave_arena = {0};
   OS_Handle file = os_file_open("test.wav", OS_AccessFlags_Create | OS_AccessFlags_Write);
   if (file.handle != (void*)-1)
   {
@@ -216,7 +216,7 @@ void create_wav_sine_file(void)
     u32 datasize = total_samples * (BIT_DEPTH / 8);
     u32 total_filesize = sizeof(RIFFHeader) + sizeof(RIFFChunk) + sizeof(WAVEChunk) + sizeof(RIFFChunk) + datasize;
 
-    u8* buffer = push_array(wave_arena, u8, total_filesize);
+    u8* buffer = PushArray(&wave_arena, u8, total_filesize);
     u8* cursor = buffer;
 
     // Write the RIFF header
@@ -342,8 +342,8 @@ int main(void)
   int screen = DefaultScreen(mainDisplay);
 
   usize max_buffer_size = cast(usize)MAX_WIDTH * MAX_HEIGHT * BYTES_PER_PIXEL;
-  Arena* arena = arena_alloc();
-  char* x11_backbuffer = push_array(arena, char, max_buffer_size);
+  Arena arena = {0};
+  char* x11_backbuffer = PushArray(&arena, char, max_buffer_size);
 
   if (x11_backbuffer == 0)
   {
@@ -471,6 +471,9 @@ int main(void)
             // clamp to max suported resolution
             new_width  = ClampTop(new_width, MAX_WIDTH);
             new_height = ClampTop(new_height, MAX_HEIGHT);
+
+            offscreen_buffer.width  = new_width;
+            offscreen_buffer.height = new_height;
 
             // Prevents XDestroyImage from deallocating the backbuffer
             image->data = NULL;
@@ -668,6 +671,13 @@ int main(void)
         audio_buffer.samples            = samples;
 
         // write audio frames
+        //game_update_and_render(
+        //    &audio_buffer,
+        //    &offscreen_buffer,
+        //    y_offset,
+        //    x_offset
+        //);
+
         fill_audio_buffer(&audio_buffer);
 
         snd_pcm_sframes_t frames_written = snd_pcm_writei(pcm_handle, samples, frames_ready);

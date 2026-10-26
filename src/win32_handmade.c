@@ -1,6 +1,7 @@
 /* Forward declaration */
 #include "handmade.h"
 
+global LPCWSTR WIN32_WINDOW_CLASS_NAME = L"Sample Window Class";
 internal LRESULT CALLBACK win32WndProc(HWND, UINT, WPARAM, LPARAM);
 
 #  define _CRT_SECURE_NO_WARNINGS
@@ -348,6 +349,87 @@ internal void win32_display_buffer_in_window(
 
 /// }}}
 
+internal b32 win32_register_window_class(HINSTANCE h_instance)
+{
+  WNDCLASSEXW window_class = {0};
+
+  window_class.cbSize        = sizeof(window_class);
+  window_class.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+  window_class.lpfnWndProc   = win32WndProc; // Long Pointer to the Windows Procedure function
+  window_class.cbClsExtra    = 0;
+  window_class.cbWndExtra    = 0;
+  window_class.hInstance     = h_instance;
+  window_class.hIcon         = LoadIcon(NULL, IDI_APPLICATION);
+  window_class.hCursor       = LoadCursor(NULL, IDC_ARROW);
+  window_class.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+  window_class.lpszMenuName  = NULL;
+  window_class.lpszClassName = WIN32_WINDOW_CLASS_NAME;
+  window_class.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
+
+  return (RegisterClassExW(&window_class) != 0);
+}
+
+
+internal b32 win32_create_window(HINSTANCE h_instance, LPCWSTR window_class_name, LPCWSTR window_name, int window_width, int window_height)
+{
+  DWORD extended_window_style    = WS_EX_CLIENTEDGE;
+  LPCWSTR window_name            = window_name;
+  DWORD window_style             = WS_OVERLAPPEDWINDOW;
+  int window_x                   = CW_USEDEFAULT; // horizontal position of the window
+  int window_y                   = CW_USEDEFAULT; // vertical position of the window
+  int window_width               = WINDOW_WIDTH;
+  int window_height              = WINDOW_HEIGHT;
+  HWND window_parent             = NULL;
+  HMENU window_menu              = NULL;
+  LPVOID window_create_parameter = NULL;
+
+  window_handle = CreateWindowExW(
+      extended_window_style,
+      window_class_name,
+      window_name,
+      window_style,
+      window_x,
+      window_y,
+      window_width,
+      window_height,
+      window_parent,
+      window_menu,
+      h_instance,
+      window_create_parameter
+  );
+
+  return window_handle != NULL;
+}
+
+internal b32 win32_init_offscreen_buffer(u32 width, u32 height)
+{
+  BITMAPINFO *bitmap_info = &win32_offscreen_buffer.info;
+
+  bitmap_info->bmiHeader.biSize        = sizeof(info->bmiHeader);
+  bitmap_info->bmiHeader.biPlanes      = 1;
+  bitmap_info->bmiHeader.biBitCount    = 32;
+  bitmap_info->bmiHeader.biCompression = BI_RGB;
+
+  win32_offscreen_buffer.frame_device_context = CreateCompatibleDC(NULL);
+  if (win32_offscreen_buffer.frame_device_context == NULL)
+  {
+    return false;
+  }
+
+  usize max_buffer_size = (usize)width * (usize)height * (usize)BYTES_PER_PIXEL;
+
+  Arena* arena = {0};
+  u8* pixels   = push_array(arena, u8, max_buffer_size);
+  if (pixels == NULL)
+  {
+    false;
+  }
+
+  win32_offscreen_buffer.pixels = pixels;
+
+  return win32_resize_dib_section(&win32_offscreen_buffer, 1280, 720);
+}
+
 /**
  * Entrypoint for Windows
  * https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-winmain
@@ -370,110 +452,26 @@ int WINAPI WinMain(
   (void)pCmdLine;
   (void)hPrevInstance;
 
-  // WNDCLASS
-  // https://learn.microsoft.com/en-us/previous-versions/ms942860(v=msdn.10)
-  // WNDCLASSA
-  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassa
-  // WNDCLASSEXA
-  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexa
-
-  // Contains window class information
-  WNDCLASSEXW windowClass = {0};
-
-  // https://learn.microsoft.com/en-us/windows/win32/learnwin32/creating-a-window
-  LPCWSTR window_class_name = L"Sample Window Class";
-
-  HWND window_handle = NULL;
-  static MSG msg     = {0};
-
-  usize max_buffer_size = cast(usize)MAX_WIDTH * MAX_HEIGHT * BYTES_PER_PIXEL;
-  Arena* arena = arena_alloc();
-  win32_offscreen_buffer.pixels = push_array(arena, u8, max_buffer_size);
-
-  win32_resize_dib_section(&win32_offscreen_buffer, 1280, 720);
-
-  windowClass.cbSize        = sizeof(WNDCLASSEXW);
-  windowClass.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-  windowClass.lpszClassName = window_class_name;
-  windowClass.lpfnWndProc   = win32WndProc; // Long Pointer to the Windows Procedure function
-  windowClass.cbClsExtra    = 0;
-  windowClass.cbWndExtra    = 0;
-  windowClass.hInstance     = hInstance;
-  windowClass.hIcon         = LoadIcon(NULL, IDI_APPLICATION);
-  windowClass.hCursor       = LoadCursor(NULL, IDC_ARROW);
-  windowClass.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-  windowClass.lpszMenuName  = NULL;
-  windowClass.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
-
-  if (!RegisterClassExW(&windowClass))
+  if (!win32_register_window_class(hInstance))
   {
-    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messagebox
-    MessageBoxW(
-        window_handle,
-        L"Window Registration Failed!",
-        L"Error!",
-        MB_ICONEXCLAMATION | MB_OK
-    );
-
-    return -1;
+    MessageBoxW(NULL, L"Window Registration Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
+    return 1;
   }
 
-  // GDI Drawing code initialization {{{
-
-  // Dimensions and color information for the bitmap
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfo
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfoheader
-  win32_offscreen_buffer.info.bmiHeader.biSize        = sizeof(win32_offscreen_buffer.info.bmiHeader); // the number of bytes required by the structure
-  win32_offscreen_buffer.info.bmiHeader.biPlanes      = 1; // the number of planes for the target device, must be set to 1
-  win32_offscreen_buffer.info.bmiHeader.biBitCount    = 32; // the number of of bits per pixel (bpp)
-  win32_offscreen_buffer.info.bmiHeader.biCompression = BI_RGB; // uncompressed RGB format
-
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createcompatibledc
-  win32_offscreen_buffer.frame_device_context = CreateCompatibleDC(0);
-
-  /// }}}
-
-  // window parameters
-  DWORD extended_window_style = WS_EX_CLIENTEDGE;
-  LPCWSTR window_name         = L"The title of my window";
-  DWORD window_style          = WS_OVERLAPPEDWINDOW;
-  int window_x                = CW_USEDEFAULT; // horizontal position of the window
-  int window_y                = CW_USEDEFAULT; // vertical position of the window
-  int window_width            = WINDOW_WIDTH;
-  int window_height           = WINDOW_HEIGHT;
-  HWND window_parent          = NULL;
-  HMENU window_menu           = NULL;
-  LPVOID lp_param             = NULL;
-
-  // Window handle for
-  window_handle = CreateWindowExW(
-      extended_window_style,
-      window_class_name,
-      window_name,
-      window_style,
-      window_x,
-      window_y,
-      window_width,
-      window_height,
-      window_parent,
-      window_menu,
-      hInstance,
-      lp_param
-  );
-
-  if (window_handle == NULL)
+  if (!win32_create_window(hInstance, WIN32_WINDOW_CLASS_NAME, L"Handmade Hero", WINDOW_WIDTH, WINDOW_HEIGHT))
   {
-    MessageBoxW(
-        window_handle,
-        L"Window Creation Failed!",
-        L"Error!",
-        MB_ICONEXCLAMATION | MB_OK
-    );
+    MessageBoxW(NULL, L"Window Creation Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
     return GetLastError();
   }
 
-  // ShowWindow
-  // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
+  if (!win32_init_offscreen_buffer((u32)WINDOW_WIDTH, (u32)WINDOW_HEIGHT))
+  {
+    MessageBoxW(NULL, L"Offscreen Buffer Initialization Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
+    return 1;
+  }
+
+  static MSG msg = {0};
+
   ShowWindow(window_handle, nCmdShow);
 
   RECT rect;
@@ -504,7 +502,7 @@ int WINAPI WinMain(
     sound_is_playing = 1;
   }
 
-  s16* samples = push_array(arena, s16, sound_output.secondary_buffer_size);
+  s16* samples = PushArray(&arena, s16, sound_output.secondary_buffer_size);
 
   u64 last_cycle_count = __rdtsc();
   LARGE_INTEGER last_counter;
@@ -626,8 +624,8 @@ int WINAPI WinMain(
     game_update_and_render(
       &audio_buffer,
       &offscreen_buffer,
-      x_offset,
-      y_offset
+      y_offset,
+      x_offset
     );
 
     if (sound_is_valid)
